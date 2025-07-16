@@ -56,41 +56,9 @@ Python deps are listed in `pyproject.toml` – main ones are **PySide6**, **pyda
 
 ## Installation
 
-### 1. Clone & set up Python environment
-
 ```bash
 git clone https://github.com/JBlitzar/muesli
-cd muesli
-# (recommended) create a virtual-env
-python -m venv .venv
-source .venv/bin/activate  # Windows: .venv\Scripts\activate
-
-# install Python dependencies
-pip install -r requirements.txt
-```
-
-### 2. Build whisper.cpp (required)
-
-```bash
-git clone https://github.com/ggml-org/whisper.cpp.git
-cd whisper.cpp
-cmake -B build
-cmake --build build -j --config Release
-# Rename build/bin/whisper-cli to just `whisper` and move somewhere in your PATH
-```
-
-`Muesli` will auto-download the GGML model you choose (default **medium**).  
-You can also drop a file such as:
-
-- `ggml-medium.en.bin`
-
-into `~/.muesli/models/whisper/` – the wrapper looks for both names.
-
-### 3. (Required) Install Ollama
-
-```bash
-curl https://ollama.ai/install.sh | sh
-ollama pull llama3:8b-instruct
+bash scripts/bootstrap_muesli_mac.sh
 ```
 
 ### 4. Run
