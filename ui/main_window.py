@@ -7,16 +7,22 @@ including controls for transcription, summarization, and displaying results.
 
 import logging
 import os
+import re
+import textwrap
+import time
+import subprocess
 from pathlib import Path
 from typing import Dict, List, Optional
 
-from PySide6.QtCore import Qt, QUrl, Slot, QTimer
-from PySide6.QtGui import QAction, QFont, QIcon, QTextCursor
+import math
+from PySide6.QtCore import Qt, QUrl, Slot, QTimer, QThreadPool, QRunnable, QDateTime
+from PySide6.QtGui import QAction, QFont, QIcon, QTextCursor, QFontDatabase, QTextOption
 from PySide6.QtWidgets import (
     QApplication, QFileDialog, QHBoxLayout, QLabel, QMainWindow, 
     QMenu, QMenuBar, QMessageBox, QProgressBar, QPushButton, 
-    QStatusBar, QTextEdit, QToolBar, QVBoxLayout, QWidget
+    QStatusBar, QTextEdit, QToolBar, QVBoxLayout, QWidget, 
 )
+# NOTE: QML engine kept for future; spinner now text-based so we drop SVG deps
 from PySide6.QtQml import QQmlApplicationEngine
 
 from models import Transcript, Summary, AudioFile
@@ -46,6 +52,8 @@ class MainWindow(QMainWindow):
         
         # Recording state flag
         self._recording = False
+        # Thread-pool for background work
+        self._thread_pool: QThreadPool = QThreadPool.globalInstance()
 
         # Set window properties
         self.setWindowTitle(f"{app.config.app_name} v{app.config.app_version}")
@@ -60,6 +68,10 @@ class MainWindow(QMainWindow):
         
         # Connect signals from application
         self._connect_signals()
+
+        # Ensure graceful cleanup when the Qt application is about to quit
+        if getattr(self.app, "_app", None):  # QApplication instance exists
+            self.app._app.aboutToQuit.connect(self._on_app_quit)
         
         logger.info("Main window initialized")
     
@@ -81,7 +93,9 @@ class MainWindow(QMainWindow):
         # ----- Combined transcript & summary area -----
         header_layout = QHBoxLayout()
         header_label = QLabel("Summary & Transcript")
-        header_label.setFont(QFont("Arial", 12, QFont.Bold))
+        header_font = QFont("Segoe UI", 14, QFont.Bold)
+        header_font.setStyleHint(QFont.SansSerif)
+        header_label.setFont(header_font)
         header_layout.addWidget(header_label)
 
         self.transcript_status = QLabel("No transcript loaded")
@@ -93,8 +107,19 @@ class MainWindow(QMainWindow):
 
         main_layout.addLayout(header_layout)
 
+        # Set up the combined text area with improved font
         self.combined_text = QTextEdit()
         self.combined_text.setReadOnly(True)
+        
+        # Use a nice sans-serif font with larger size
+        content_font = QFont("Segoe UI", 18)
+        content_font.setStyleHint(QFont.SansSerif)  # Fallback to system sans-serif if Segoe UI not available
+        self.combined_text.setFont(content_font)
+        
+        # Set line width for word wrap (65 characters)
+        self.combined_text.setLineWrapMode(QTextEdit.WidgetWidth)
+        self.combined_text.setWordWrapMode(QTextOption.WrapAtWordBoundaryOrAnywhere)
+        
         self.combined_text.setPlaceholderText(
             "Summary (Markdown) and transcript will appear here"
         )
@@ -114,6 +139,32 @@ class MainWindow(QMainWindow):
         self.progress_bar.setRange(0, 100)
         self.progress_bar.setVisible(False)
         self.status_bar.addWidget(self.progress_bar)
+
+        # ------------------------------------------------------------------#
+        # Time-based progress estimation                                    #
+        # ------------------------------------------------------------------#
+        self._progress_timer = QTimer(self)
+        self._progress_timer.setInterval(200)  # update ~5× per second
+        self._progress_timer.timeout.connect(self._on_progress_tick)
+        self._progress_total_secs: float = 0.0
+        self._progress_elapsed_secs: float = 0.0
+        self._progress_start_time = None
+
+        # ------------------------------------------------------------------#
+        # Text-based loading indicator (ASCII spinner)                      #
+        # ------------------------------------------------------------------#
+        self._spinner_chars = ["-", "\\", "|", "/"]
+        self._spinner_idx = 0
+        self._spinner_timer = QTimer(self)
+        self._spinner_timer.setInterval(150)
+        self._spinner_timer.timeout.connect(self._update_spinner)
+
+        self.loading_label = QLabel("Loading " + self._spinner_chars[0])
+        loading_font = QFont("Segoe UI", 12, QFont.Bold)
+        loading_font.setStyleHint(QFont.SansSerif)
+        self.loading_label.setFont(loading_font)
+        self.loading_label.setVisible(False)
+        self.status_bar.addPermanentWidget(self.loading_label)
     
     def _create_menu_bar(self):
         """Create the menu bar."""
@@ -208,6 +259,183 @@ class MainWindow(QMainWindow):
         self.app.summarization_complete.connect(self._on_summarization_complete)
         self.app.summarization_failed.connect(self._on_summarization_failed)
     
+    # ------------------------------------------------------------------#
+    # Thread helpers                                                    #
+    # ------------------------------------------------------------------#
+
+    class _FunctionWorker(QRunnable):
+        """Run an arbitrary callable in a background Qt thread."""
+
+        def __init__(self, fn, *args, **kwargs):
+            super().__init__()
+            self.fn = fn
+            self.args = args
+            self.kwargs = kwargs
+
+        def run(self):
+            try:
+                self.fn(*self.args, **self.kwargs)
+            except Exception:  # pragma: no cover
+                logger.exception("Background task failed")
+
+    # ------------------------------------------------------------------#
+    # Graceful-shutdown helpers                                         #
+    # ------------------------------------------------------------------#
+
+    def _cleanup_resources(self) -> None:
+        """
+        Stop any timers / recordings and propagate shutdown to the core
+        application.  This is called from both the window close event and the
+        global ``aboutToQuit`` signal to guarantee cleanup.
+        """
+        # Stop active recording stream
+        if getattr(self, "_recording", False):
+            try:
+                self.app.stop_streaming_transcription()
+            except Exception:  # pragma: no cover
+                logger.exception("Error stopping recording during shutdown")
+
+        # Stop timers
+        self._stop_progress_timer()
+        if self._spinner_timer.isActive():
+            self._spinner_timer.stop()
+
+        # Call application-level shutdown to release subprocesses / temp files
+        try:
+            self.app.shutdown()
+        except Exception:  # pragma: no cover
+            logger.exception("Error during app.shutdown()")
+    
+    def _on_app_quit(self) -> None:
+        """
+        Handle application quit signal.
+        
+        This is connected to the QApplication.aboutToQuit signal to ensure
+        resources are properly cleaned up even if the window close event
+        is bypassed.
+        """
+        logger.info("Application quit signal received, cleaning up resources")
+        self._cleanup_resources()
+
+    # ------------------------------------------------------------------#
+    # Progress estimation helpers                                       #
+    # ------------------------------------------------------------------#
+    
+    def _get_audio_duration(self, audio_path: str) -> float:
+        """
+        Get the duration of an audio file in seconds.
+        
+        Args:
+            audio_path: Path to the audio file
+            
+        Returns:
+            Duration in seconds or a default value if duration can't be determined
+        """
+        try:
+            # Try to use ffprobe to get duration
+            cmd = [
+                "ffprobe", 
+                "-v", "error", 
+                "-show_entries", "format=duration", 
+                "-of", "default=noprint_wrappers=1:nokey=1", 
+                audio_path
+            ]
+            result = subprocess.run(cmd, capture_output=True, text=True, check=True)
+            duration = float(result.stdout.strip())
+            logger.info(f"Audio duration from ffprobe: {duration:.2f} seconds")
+            return duration
+        except (subprocess.SubprocessError, ValueError) as e:
+            logger.warning(f"Could not determine audio duration with ffprobe: {e}")
+            
+            # Fallback: use file size as a rough estimate (1MB ≈ 1 minute)
+            try:
+                file_size_mb = os.path.getsize(audio_path) / (1024 * 1024)
+                estimated_duration = file_size_mb * 60  # 1MB ≈ 1 minute as rough estimate
+                logger.info(f"Estimated audio duration from file size: {estimated_duration:.2f} seconds")
+                return max(estimated_duration, 30)  # At least 30 seconds
+            except Exception as e2:
+                logger.warning(f"Could not estimate duration from file size: {e2}")
+                
+                # Default fallback: assume 3 minutes
+                logger.info("Using default duration of 180 seconds")
+                return 180.0
+    
+    def _start_progress_timer(self, audio_duration: float):
+        """
+        Start the progress timer for time-based estimation.
+        
+        Args:
+            audio_duration: Duration of the audio in seconds
+        """
+        # Set up timer parameters
+        self._progress_total_secs = audio_duration / 20  # Divide by 20 as requested
+        self._progress_elapsed_secs = 0.0
+        self._progress_start_time = QDateTime.currentDateTime()
+        
+        # Start the timer
+        if not self._progress_timer.isActive():
+            self._progress_timer.start()
+        
+        logger.info(f"Started progress timer: estimating {self._progress_total_secs:.2f} seconds for transcription")
+    
+    def _stop_progress_timer(self):
+        """Stop the progress timer."""
+        if self._progress_timer.isActive():
+            self._progress_timer.stop()
+            logger.info("Stopped progress timer")
+    
+    def _on_progress_tick(self):
+        """Update progress based on elapsed time."""
+        if self._progress_start_time is None or self._progress_total_secs <= 0:
+            return
+        
+        # Calculate elapsed time
+        now = QDateTime.currentDateTime()
+        self._progress_elapsed_secs = self._progress_start_time.msecsTo(now) / 1000.0
+        
+        # Calculate progress percentage (capped at 95% to avoid appearing complete)
+        progress_pct = min(self._progress_elapsed_secs / self._progress_total_secs, 0.95)
+        
+        # Update progress bar
+        self.progress_bar.setValue(int(progress_pct * 100))
+        
+        # Update status with time estimate
+        remaining_secs = max(0, self._progress_total_secs - self._progress_elapsed_secs)
+        if remaining_secs > 0:
+            self.status_label.setText(f"Transcribing... (approx. {int(remaining_secs)} seconds remaining)")
+
+    # ------------------------------------------------------------------#
+    # Loading / spinner helpers                                         #
+    # ------------------------------------------------------------------#
+
+    def _update_spinner(self) -> None:
+        """Advance spinner frame."""
+        self._spinner_idx = (self._spinner_idx + 1) % len(self._spinner_chars)
+        char = self._spinner_chars[self._spinner_idx]
+        self.loading_label.setText(f"Loading {char}")
+
+    def _show_loading(self, show: bool = True) -> None:
+        """Toggle spinner visibility."""
+        if show:
+            if not self._spinner_timer.isActive():
+                self._spinner_idx = 0
+                self._spinner_timer.start()
+            self.loading_label.setVisible(True)
+        else:
+            if self._spinner_timer.isActive():
+                self._spinner_timer.stop()
+            self.loading_label.setVisible(False)
+    
+    def _wrap_text(self, text, width=65):
+        """Wrap text to specified width."""
+        wrapped_lines = []
+        for line in text.split('\n'):
+            if line.strip():
+                wrapped_lines.extend(textwrap.wrap(line, width=width))
+            else:
+                wrapped_lines.append('')  # Preserve empty lines
+        return '\n'.join(wrapped_lines)
+    
     def _update_combined_content(self, transcript_text="", summary_text=""):
         """
         Update the combined content with summary and transcript.
@@ -216,7 +444,10 @@ class MainWindow(QMainWindow):
             transcript_text: The transcript text
             summary_text: The summary text (markdown)
         """
-        # Store raw content for saving
+        # Apply 65 character line wrapping to transcript
+        wrapped_transcript = self._wrap_text(transcript_text, width=65)
+        
+        # Store raw content for saving (use unwrapped text for saving)
         if summary_text:
             self._combined_markdown = f"{summary_text}\n\n---\n\n{transcript_text}"
         else:
@@ -245,13 +476,34 @@ class MainWindow(QMainWindow):
             # Convert line breaks
             html_summary = html_summary.replace("\n\n", "<br><br>")
             
-            # Create the combined HTML content
+            # Create the combined HTML content with proper font styling
             html_content = f"""
             <html>
+            <head>
+                <style>
+                    body {{ 
+                        font-family: 'Segoe UI', 'Helvetica Neue', Arial, sans-serif; 
+                        font-size: 18px;
+                        line-height: 1.5;
+                    }}
+                    pre {{ 
+                        font-family: 'Segoe UI', 'Helvetica Neue', Arial, sans-serif;
+                        font-size: 18px;
+                        white-space: pre-wrap;
+                        margin-top: 20px;
+                    }}
+                    hr {{ 
+                        border: 0;
+                        height: 1px;
+                        background: #ccc;
+                        margin: 20px 0;
+                    }}
+                </style>
+            </head>
             <body>
             {html_summary}
             <hr>
-            <pre>{transcript_text}</pre>
+            <pre>{wrapped_transcript}</pre>
             </body>
             </html>
             """
@@ -259,8 +511,8 @@ class MainWindow(QMainWindow):
             # Set the HTML content
             self.combined_text.setHtml(html_content)
         else:
-            # Just plain text for transcript only
-            self.combined_text.setPlainText(transcript_text)
+            # Just plain text for transcript only (wrapped)
+            self.combined_text.setPlainText(wrapped_transcript)
     
     @Slot()
     def _on_open_file(self):
@@ -382,11 +634,20 @@ class MainWindow(QMainWindow):
             self.transcript_status.setText("Transcription in progress...")
             self.progress_bar.setValue(0)
             self.progress_bar.setVisible(True)
+            self._show_loading(True)  # Show loading animation
+            
+            # Get audio duration for progress estimation
+            audio_duration = self._get_audio_duration(audio_path)
+            
+            # Start progress timer
+            self._start_progress_timer(audio_duration)
             
             # Start transcription in a separate thread
             def on_progress(progress, message):
-                # Update progress bar
-                self.progress_bar.setValue(int(progress * 100))
+                # We'll ignore the actual progress since we're using time-based estimation
+                # But we'll still use the messages
+                if message:
+                    self.status_label.setText(message)
             
             # Use app's transcribe_file method
             threading_timer = QTimer.singleShot(
@@ -398,6 +659,8 @@ class MainWindow(QMainWindow):
             logger.error(f"Error starting transcription: {e}")
             QMessageBox.critical(self, "Error", f"Failed to start transcription: {e}")
             self.progress_bar.setVisible(False)
+            self._show_loading(False)  # Hide loading animation
+            self._stop_progress_timer()  # Stop the progress timer
     
     def _start_transcription(self, audio_path, on_progress):
         """Start transcription in the app."""
@@ -411,6 +674,7 @@ class MainWindow(QMainWindow):
         except Exception as e:
             logger.error(f"Error in transcription thread: {e}")
             # We'll handle this via the transcription_failed signal
+            self._stop_progress_timer()  # Stop the progress timer
     
     @Slot()
     def _on_summarize_clicked(self):
@@ -438,6 +702,7 @@ class MainWindow(QMainWindow):
             # Update UI
             self.status_label.setText("Generating summary...")
             self.summary_status.setText("Summarization in progress...")
+            self._show_loading(True)  # Show loading animation
             
             # Start summarization in a separate thread
             threading_timer = QTimer.singleShot(
@@ -448,6 +713,7 @@ class MainWindow(QMainWindow):
         except Exception as e:
             logger.error(f"Error starting summarization: {e}")
             QMessageBox.critical(self, "Error", f"Failed to start summarization: {e}")
+            self._show_loading(False)  # Hide loading animation
     
     def _start_summarization(self, transcript):
         """Start summarization in the app."""
@@ -522,6 +788,7 @@ class MainWindow(QMainWindow):
         self.transcript_status.setText("Transcription in progress...")
         self.progress_bar.setValue(0)
         self.progress_bar.setVisible(True)
+        self._show_loading(True)  # Show loading animation
     
     @Slot(str, float, str)
     def _on_transcription_progress(self, transcript_id, progress, message):
@@ -529,12 +796,12 @@ class MainWindow(QMainWindow):
         if transcript_id != self._active_transcript_id:
             return
         
-        # Update progress bar
-        self.progress_bar.setValue(int(progress * 100))
-        
-        # Update status
+        # We don't update the progress bar here since we're using time-based estimation
+        # But we'll still update the status message
         if message:
-            self.status_label.setText(message)
+            # Don't override the time remaining message from the timer
+            if not message.startswith("Transcribing... (approx"):
+                self.status_label.setText(message)
         
         # Update transcript text if available
         transcript = self.app.get_transcript(transcript_id)
@@ -554,6 +821,9 @@ class MainWindow(QMainWindow):
         if transcript_id != self._active_transcript_id:
             return
         
+        # Stop the progress timer
+        self._stop_progress_timer()
+        
         # Get the transcript
         transcript = self.app.get_transcript(transcript_id)
         if not transcript:
@@ -563,6 +833,7 @@ class MainWindow(QMainWindow):
         self.transcript_status.setText(f"Transcription complete")
         self.status_label.setText("Transcription complete")
         self.progress_bar.setVisible(False)
+        self._show_loading(False)  # Hide loading animation
         
         # Update the combined text with transcript
         self._update_combined_content(transcript_text=transcript.text)
@@ -577,10 +848,14 @@ class MainWindow(QMainWindow):
         if transcript_id != self._active_transcript_id:
             return
         
+        # Stop the progress timer
+        self._stop_progress_timer()
+        
         # Update UI
         self.transcript_status.setText("Transcription failed")
         self.status_label.setText(f"Error: {error_message}")
         self.progress_bar.setVisible(False)
+        self._show_loading(False)  # Hide loading animation
         
         # Show error message
         QMessageBox.critical(self, "Transcription Error", error_message)
@@ -591,6 +866,7 @@ class MainWindow(QMainWindow):
         self._active_summary_id = summary_id
         self.summary_status.setText("Summarization in progress...")
         self.status_label.setText("Generating summary...")
+        self._show_loading(True)  # Show loading animation
     
     @Slot(str)
     def _on_summarization_complete(self, summary_id):
@@ -611,6 +887,7 @@ class MainWindow(QMainWindow):
         # Update UI
         self.summary_status.setText("Summary generated")
         self.status_label.setText("Summary generated successfully")
+        self._show_loading(False)  # Hide loading animation
         
         # Update the combined text with summary and transcript
         self._update_combined_content(
@@ -627,15 +904,15 @@ class MainWindow(QMainWindow):
         # Update UI
         self.summary_status.setText("Summarization failed")
         self.status_label.setText(f"Error: {error_message}")
+        self._show_loading(False)  # Hide loading animation
         
         # Show error message
         QMessageBox.critical(self, "Summarization Error", error_message)
     
     def closeEvent(self, event):
         """Handle window close event."""
-        # Stop any active recording
-        if hasattr(self, '_recording') and self._recording:
-            self.app.stop_streaming_transcription()
+        # Run cleanup to ensure all resources are properly released
+        self._cleanup_resources()
         
         # Accept the close event
         event.accept()

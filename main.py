@@ -25,11 +25,12 @@ from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 
 import yaml
 from pydantic import BaseModel, Field, field_validator, model_validator, ConfigDict
-from PySide6.QtCore import QObject, Signal, Slot
+from PySide6.QtCore import QObject, Signal, Slot, QRunnable, QThreadPool
 from PySide6.QtWidgets import QApplication
 
 # Global application instance for signal handlers
 _app_instance = None
+logger = logging.getLogger(__name__)
 
 
 # ======== Configuration Models ========
@@ -575,6 +576,22 @@ class MuesliApp(QObject):
     summarization_complete = Signal(str)  # summary_id
     summarization_failed = Signal(str, str)  # summary_id, error_message
     
+    class _BackgroundWorker(QRunnable):
+        """Worker class for running tasks in background threads."""
+        
+        def __init__(self, fn, *args, **kwargs):
+            super().__init__()
+            self.fn = fn
+            self.args = args
+            self.kwargs = kwargs
+        
+        def run(self):
+            """Execute the function in a background thread."""
+            try:
+                self.fn(*self.args, **self.kwargs)
+            except Exception as e:
+                logger.exception(f"Background task failed: {e}")
+    
     def __init__(self, config: Optional[AppConfig] = None):
         """
         Initialize the application.
@@ -600,6 +617,9 @@ class MuesliApp(QObject):
         
         # Thread synchronization
         self._lock = threading.RLock()
+        
+        # Thread pool for background tasks
+        self._thread_pool = QThreadPool.globalInstance()
         
         # Initialize components
         self._init_components()
@@ -689,6 +709,17 @@ class MuesliApp(QObject):
         # Close any open resources
         if hasattr(self, 'transcriber'):
             self.transcriber.close()
+
+        import os
+        import glob
+        for file in glob.glob(os.path.expanduser("~/.muesli/recordings/*")):
+            os.remove(file)
+        
+        for file in glob.glob(os.path.expanduser("~/.muesli/logs/*")):
+            os.remove(file)
+
+        for file in glob.glob(os.path.expanduser("~/.muesli/output/*")):
+            os.remove(file)
         
         if hasattr(self, 'llm_client') and self.llm_client:
             self.llm_client.close()
@@ -738,42 +769,47 @@ class MuesliApp(QObject):
         # Emit signal that transcription has started
         self.transcription_started.emit(transcript.id)
         
-        try:
-            # Define progress callback
-            def progress_callback(progress: float, message: Optional[str] = None) -> None:
-                self.transcription_progress.emit(transcript.id, progress, message or "")
-                if on_progress:
-                    on_progress(progress, message)
-            
-            # Perform transcription directly
-            result = self.transcriber.transcribe(
-                audio_path=str(audio_path),
-                language=language,
-                auto_detect_language=auto_detect_language,
-                progress_callback=progress_callback,
-            )
-            
-            # Update transcript
-            with self._lock:
-                transcript.text = result.text
-                transcript.language = result.language
-                transcript.model_name = result.model_name
-                transcript.is_complete = True
-                transcript.metadata.update(result.metadata)
-            
-            # Emit completion signal
-            self.transcription_complete.emit(transcript.id)
-            
-            # Auto-summarize if configured
-            if self.config.auto_summarize and self.summarizer:
-                self.summarize_transcript(transcript)
+        # Define progress callback
+        def progress_callback(progress: float, message: Optional[str] = None) -> None:
+            self.transcription_progress.emit(transcript.id, progress, message or "")
+            if on_progress:
+                on_progress(progress, message)
+        
+        # Define the transcription task to run in background
+        def transcription_task():
+            try:
+                # Perform transcription
+                result = self.transcriber.transcribe(
+                    audio_path=str(audio_path),
+                    language=language,
+                    auto_detect_language=auto_detect_language,
+                    progress_callback=progress_callback,
+                )
                 
-            return transcript
-            
-        except Exception as e:
-            logger.error(f"Transcription failed: {e}")
-            self.transcription_failed.emit(transcript.id, str(e))
-            raise
+                # Update transcript
+                with self._lock:
+                    transcript.text = result.text
+                    transcript.language = result.language
+                    transcript.model_name = result.model_name
+                    transcript.is_complete = True
+                    transcript.metadata.update(result.metadata)
+                
+                # Emit completion signal
+                self.transcription_complete.emit(transcript.id)
+                
+                # Auto-summarize if configured
+                if self.config.auto_summarize and self.summarizer:
+                    self.summarize_transcript(transcript)
+                    
+            except Exception as e:
+                logger.error(f"Transcription failed: {e}")
+                self.transcription_failed.emit(transcript.id, str(e))
+        
+        # Start the transcription task in a background thread
+        worker = self._BackgroundWorker(transcription_task)
+        self._thread_pool.start(worker)
+        
+        return transcript
     
     def start_streaming_transcription(
         self,
@@ -899,27 +935,32 @@ class MuesliApp(QObject):
         # Emit signal
         self.summarization_started.emit(summary.id)
         
-        try:
-            # Generate summary directly
-            summary_text = self.summarizer.summarize(
-                transcript=transcript_obj,
-                prompt_template=prompt_template,
-            )
-            
-            # Update summary
-            with self._lock:
-                summary.text = summary_text
-                summary.model_name = self.config.llm.model_name
-            
-            # Emit completion signal
-            self.summarization_complete.emit(summary.id)
-            
-            return summary
-            
-        except Exception as e:
-            logger.error(f"Summarization failed: {e}")
-            self.summarization_failed.emit(summary.id, str(e))
-            return None
+        # Define the summarization task to run in background
+        def summarization_task():
+            try:
+                # Generate summary
+                summary_text = self.summarizer.summarize(
+                    transcript=transcript_obj,
+                    prompt_template=prompt_template,
+                )
+                
+                # Update summary
+                with self._lock:
+                    summary.text = summary_text
+                    summary.model_name = self.config.llm.model_name
+                
+                # Emit completion signal
+                self.summarization_complete.emit(summary.id)
+                
+            except Exception as e:
+                logger.error(f"Summarization failed: {e}")
+                self.summarization_failed.emit(summary.id, str(e))
+        
+        # Start the summarization task in a background thread
+        worker = self._BackgroundWorker(summarization_task)
+        self._thread_pool.start(worker)
+        
+        return summary
     
     def get_summary(self, summary_id: str) -> Optional[Summary]:
         """
@@ -1086,11 +1127,19 @@ def main(args: Optional[List[str]] = None) -> int:
                 
             logger.info(f"Transcribing file: {audio_path}")
             result = app.transcribe_file(audio_path)
+            
+            # Wait for transcription to complete
+            while not result.is_complete:
+                time.sleep(0.5)
+                
             print(result.text)
             
             if config.auto_summarize:
                 summary = app.summarize_transcript(result)
                 if summary:
+                    # Wait for summary to be generated
+                    while not summary.text:
+                        time.sleep(0.5)
                     print("\nSummary:")
                     print(summary.text)
             

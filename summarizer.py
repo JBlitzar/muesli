@@ -205,6 +205,8 @@ class TranscriptSummarizer:
             temperature=temperature,
             max_tokens=max_tokens,
         )
+
+        print(summary_text)
         
         # Create and return Summary object
         return self.create_summary_object(

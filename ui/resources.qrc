@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<RCC>
+    <qresource prefix="/images/resources">
+        <file>resources/loading.svg</file>
+    </qresource>
+</RCC>

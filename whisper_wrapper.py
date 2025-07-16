@@ -186,6 +186,8 @@ class WhisperTranscriber:
 
         
         logger.info(f"Running command: {' '.join(cmd)}")
+
+        start = time.time()
         
         # Run the command
         process = subprocess.Popen(
@@ -219,6 +221,39 @@ class WhisperTranscriber:
         
         # Wait for process to complete
         stdout, stderr = process.communicate()
+
+        end = time.time()
+        elapsed = end - start
+
+        # ------------------------------------------------------------------+
+        # Log more informative timing information                           +
+        # ------------------------------------------------------------------+
+        audio_duration: Optional[float] = None
+        try:
+            # Use ffprobe (if available) to get the audio duration
+            cmd = [
+                "ffprobe",
+                "-v", "error",
+                "-show_entries", "format=duration",
+                "-of", "default=noprint_wrappers=1:nokey=1",
+                str(audio_path),
+            ]
+            result = subprocess.run(
+                cmd, capture_output=True, text=True, check=True, timeout=5
+            )
+            audio_duration = float(result.stdout.strip())
+        except Exception:
+            # Silently ignore if ffprobe is not available or fails
+            pass
+
+        if audio_duration and audio_duration > 0:
+            realtime_factor = audio_duration / elapsed if elapsed > 0 else 0.0
+            print(
+                f"Transcribed {audio_duration:.1f}s of audio in "
+                f"{elapsed:.1f}s (≈{realtime_factor:.2f}× realtime)"
+            )
+        else:
+            print(f"Transcription wall time: {elapsed:.2f}s")
         
         if process.returncode != 0:
             logger.error(f"Transcription failed: {stderr}")

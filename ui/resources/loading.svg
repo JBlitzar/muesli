@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
+  <!-- Simple spinner with rotating elements -->
+  <g>
+    <!-- Outer circle (optional background) -->
+    <circle cx="50" cy="50" r="45" fill="none" stroke="#e0e0e0" stroke-width="2" opacity="0.3"/>
+    
+    <!-- Spinning segments -->
+    <g>
+      <animateTransform
+        attributeName="transform"
+        type="rotate"
+        from="0 50 50"
+        to="360 50 50"
+        dur="1.5s"
+        repeatCount="indefinite"
+      />
+      
+      <!-- 8 segments with varying opacity -->
+      <rect x="46" y="5" width="8" height="20" rx="4" fill="#4287f5" opacity="1.0"/>
+      <rect x="46" y="5" width="8" height="20" rx="4" fill="#4287f5" opacity="0.9" transform="rotate(45 50 50)"/>
+      <rect x="46" y="5" width="8" height="20" rx="4" fill="#4287f5" opacity="0.8" transform="rotate(90 50 50)"/>
+      <rect x="46" y="5" width="8" height="20" rx="4" fill="#4287f5" opacity="0.7" transform="rotate(135 50 50)"/>
+      <rect x="46" y="5" width="8" height="20" rx="4" fill="#4287f5" opacity="0.6" transform="rotate(180 50 50)"/>
+      <rect x="46" y="5" width="8" height="20" rx="4" fill="#4287f5" opacity="0.5" transform="rotate(225 50 50)"/>
+      <rect x="46" y="5" width="8" height="20" rx="4" fill="#4287f5" opacity="0.4" transform="rotate(270 50 50)"/>
+      <rect x="46" y="5" width="8" height="20" rx="4" fill="#4287f5" opacity="0.3" transform="rotate(315 50 50)"/>
+    </g>
+  </g>
+</svg>
