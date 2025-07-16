@@ -1,0 +1,105 @@
+# Muesli Configuration Example
+# Copy this file to ~/.muesli/config.yaml and customize as needed
+# You can override any setting with environment variables prefixed with MUESLI_
+# Example: MUESLI_TRANSCRIPTION_MODEL=small
+
+# Application metadata
+app_name: "Muesli"
+app_version: "0.1.0"
+
+# Transcription settings
+transcription:
+  # Whisper model size: tiny, base, small, medium, large, large-v3
+  model: medium
+  
+  # Directory where Whisper models are stored
+  model_dir: ~/.muesli/models/whisper
+  
+  # Automatically detect language of audio
+  auto_language_detection: true
+  
+  # Default language code (ISO 639-1) when auto-detection is disabled
+  default_language: en
+  
+  # Device to use for inference: 'cpu', 'cuda', 'mps', or 'auto' to detect
+  device: auto
+  
+  # Beam size for decoding (higher = more accurate but slower)
+  beam_size: 5
+  
+  # Use voice activity detection to filter out non-speech
+  vad_filter: true
+
+# LLM settings for summarization
+llm:
+  # LLM provider: 'ollama' or 'none' to disable LLM features
+  provider: ollama
+  
+  # Ollama server settings
+  ollama_host: localhost
+  ollama_port: 11434
+  
+  # Model name to use with the provider
+  model_name: llama3:8b-instruct
+  
+  # Run LLM in offline mode (no network access)
+  offline_mode: true
+  
+  # Prompt template for generating summaries
+  # {transcript} will be replaced with the transcript text
+  summary_prompt_template: >
+    Below is a transcript of an audio recording.
+    Please provide a concise summary of the key points discussed:
+
+    {transcript}
+
+    Summary:
+
+# UI settings
+ui:
+  # Theme mode: dark, light, system
+  theme: system
+  
+  # Base font size in points
+  font_size: 12
+  
+  # Number of recent files to display
+  recent_files_limit: 10
+  
+  # Show audio waveform in transcript view
+  waveform_visible: true
+  
+  # Auto-scroll transcript during playback
+  auto_scroll: true
+
+# Database settings
+database:
+  # Path to SQLite database file
+  path: ~/.muesli/data/muesli.db
+
+# Privacy settings
+privacy:
+  # Enable anonymous usage telemetry
+  telemetry_enabled: false
+  
+  # Allow network access for model downloads and updates
+  allow_network: false
+  
+  # Verify hash of downloaded models
+  model_hash_verification: true
+  
+  # Redact potentially sensitive information from logs
+  log_redaction: true
+
+# Application behavior
+# Automatically start transcription when audio is loaded
+auto_transcribe: true
+
+# Automatically generate summary when transcription completes
+auto_summarize: false
+
+# Directory for application data
+data_dir: ~/.muesli/data
+
+# Directory for application cache
+cache_dir: ~/.muesli/cache
