@@ -59,6 +59,13 @@ class MainWindow(QMainWindow):
         self.setWindowTitle(f"{app.config.app_name} v{app.config.app_version}")
         self.resize(1024, 768)
         
+        # Set window background color
+        self.setStyleSheet("""
+            QMainWindow {
+                background-color: #fcfbf6;
+            }
+        """)
+        
         # Active transcripts and summaries
         self._active_transcript_id = None
         self._active_summary_id = None
@@ -79,10 +86,17 @@ class MainWindow(QMainWindow):
         """Set up the UI components."""
         # Create central widget
         central_widget = QWidget()
+        central_widget.setStyleSheet("""
+            QWidget {
+                background-color: #fcfbf6;
+            }
+        """)
         self.setCentralWidget(central_widget)
         
-        # Create main layout
+        # Create main layout with padding
         main_layout = QVBoxLayout(central_widget)
+        main_layout.setContentsMargins(20, 20, 20, 20)  # Add padding around main content
+        main_layout.setSpacing(16)  # Add spacing between elements
         
         # Create menu bar
         self._create_menu_bar()
@@ -92,27 +106,32 @@ class MainWindow(QMainWindow):
         
         # ----- Combined transcript & summary area -----
         header_layout = QHBoxLayout()
+        header_layout.setContentsMargins(20, 0, 20, 0)  # Add horizontal padding to header
+        
         header_label = QLabel("Summary & Transcript")
-        header_font = QFont("Inter", 14, QFont.Bold)
+        header_font = QFont("Geist Mono", 14, QFont.Bold)
         header_font.setStyleHint(QFont.SansSerif)
         header_label.setFont(header_font)
+        header_label.setStyleSheet("color: #333333;")
         header_layout.addWidget(header_label)
 
         self.transcript_status = QLabel("No transcript loaded")
+        self.transcript_status.setStyleSheet("color: #7f8c8d;")
         header_layout.addWidget(self.transcript_status)
 
         self.summary_status = QLabel("No summary generated")
+        self.summary_status.setStyleSheet("color: #7f8c8d;")
         header_layout.addWidget(self.summary_status)
         header_layout.addStretch()
 
         main_layout.addLayout(header_layout)
 
-        # Set up the combined text area with improved font
+        # Set up the combined text area with improved font and styling
         self.combined_text = QTextEdit()
         self.combined_text.setReadOnly(True)
         
         # Use a nice sans-serif font with larger size
-        content_font = QFont("Inter", 18)
+        content_font = QFont("Geist Mono", 18)
         content_font.setStyleHint(QFont.SansSerif)  # Fallback to system sans-serif if Inter not available
         self.combined_text.setFont(content_font)
         
@@ -120,24 +139,106 @@ class MainWindow(QMainWindow):
         self.combined_text.setLineWrapMode(QTextEdit.WidgetWidth)
         self.combined_text.setWordWrapMode(QTextOption.WrapAtWordBoundaryOrAnywhere)
         
+        # Add styling with padding, rounded corners, and background
+        self.combined_text.setStyleSheet("""
+            QTextEdit {
+                background-color: #fcfbf6;
+                border: 1px solid #e6e3d6;
+                border-radius: 12px;
+                padding: 24px;
+                color: #333333;
+                selection-background-color: #3498db;
+                selection-color: white;
+            }
+            QScrollBar:vertical {
+                background-color: #f0ede3;
+                border: none;
+                border-radius: 6px;
+                width: 12px;
+                margin: 0;
+            }
+            QScrollBar::handle:vertical {
+                background-color: #e8e8e8;
+                border-radius: 6px;
+                min-height: 20px;
+            }
+            QScrollBar::handle:vertical:hover {
+                background-color: #c7c2b4;
+            }
+            QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {
+                height: 0px;
+            }
+            QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {
+                background: none;
+            }
+        """)
+        
         self.combined_text.setPlaceholderText(
             "Summary (Markdown) and transcript will appear here"
         )
-        main_layout.addWidget(self.combined_text)
+        
+        # Create a container widget for the text area to add outer padding/styling
+        text_container = QWidget()
+        text_container.setStyleSheet("""
+            QWidget {
+                background-color: #fcfbf6;
+                border: 1px solid #e6e3d6;
+                border-radius: 12px;
+            }
+        """)
+        
+        text_layout = QVBoxLayout(text_container)
+        text_layout.setContentsMargins(2, 2, 2, 2)  # Small margin for the border
+        text_layout.addWidget(self.combined_text)
+        
+        main_layout.addWidget(text_container)
 
         # Holds latest markdown so we can save exact content
         self._combined_markdown: str = ""
         
         # Create status bar
         self.status_bar = QStatusBar()
+        self.status_bar.setStyleSheet("""
+            QStatusBar {
+                background-color: #e8e8e8;
+                color: white;
+                border: none;
+                padding: 12px 16px;
+                margin: 0px;
+                min-height: 20px;
+            }
+            QStatusBar QLabel {
+                color: white;
+                padding-left: 8px;
+                background: transparent;
+            }
+            QStatusBar QProgressBar {
+                background-color: rgba(211, 219, 230, 0.3);
+                border: none;
+                height: 20px;
+            }
+        """)
         self.setStatusBar(self.status_bar)
         
         self.status_label = QLabel("Ready")
+        self.status_label.setStyleSheet("color: white; font-family: 'Geist Mono', sans-serif;")
         self.status_bar.addWidget(self.status_label, 1)
         
         self.progress_bar = QProgressBar()
         self.progress_bar.setRange(0, 100)
         self.progress_bar.setVisible(False)
+        self.progress_bar.setStyleSheet("""
+            QProgressBar {
+                background-color: rgba(211, 219, 230, 0.3);
+                height: 20px;
+                text-align: center;
+                color: white;
+            }
+            QProgressBar::chunk {
+                background-color: #3498db;
+                border-radius: 10px;
+            }
+        """)
         self.status_bar.addWidget(self.progress_bar)
 
         # ------------------------------------------------------------------#
@@ -160,15 +261,50 @@ class MainWindow(QMainWindow):
         self._spinner_timer.timeout.connect(self._update_spinner)
 
         self.loading_label = QLabel("Loading " + self._spinner_chars[0])
-        loading_font = QFont("Inter", 12, QFont.Bold)
+        loading_font = QFont("Geist Mono", 12, QFont.Bold)
         loading_font.setStyleHint(QFont.SansSerif)
         self.loading_label.setFont(loading_font)
+        self.loading_label.setStyleSheet("""
+            QLabel {
+                color: white;
+                background-color: rgba(211, 219, 230, 0.2);
+                border-radius: 0px;
+                padding: 4px 8px;
+                margin: 2px;
+            }
+        """)
         self.loading_label.setVisible(False)
         self.status_bar.addPermanentWidget(self.loading_label)
     
     def _create_menu_bar(self):
         """Create the menu bar."""
         menu_bar = self.menuBar()
+        menu_bar.setStyleSheet("""
+            QMenuBar {
+                background-color: #fcfbf6;
+                color: #333333;
+                border: none;
+                padding: 4px;
+            }
+            QMenuBar::item {
+                background-color: transparent;
+                padding: 8px 12px;
+            }
+            QMenuBar::item:selected {
+                background-color: #e6e3d6;
+            }
+            QMenu {
+                background-color: #fcfbf6;
+                border: 1px solid #e6e3d6;
+                padding: 4px;
+            }
+            QMenu::item {
+                padding: 8px 16px;
+            }
+            QMenu::item:selected {
+                background-color: #e6e3d6;
+            }
+        """)
         
         # File menu
         file_menu = menu_bar.addMenu("&File")
@@ -221,6 +357,49 @@ class MainWindow(QMainWindow):
     def _create_toolbar(self):
         """Create the toolbar."""
         toolbar = QToolBar("Main Toolbar")
+        toolbar.setStyleSheet("""
+            QToolBar {
+                background-color: #d3dbe6;
+                border: none;
+                padding: 12px 16px;
+                spacing: 8px;
+                margin: 0px 0px 8px 0px;
+                min-height: 44px;
+            }
+            QToolBar QToolButton {
+                background-color: #fcfbf6;
+                color: #333333;
+                border: 1px solid #e6e3d6;
+                padding: 8px 16px;
+                margin: 2px;
+                font-family: 'Geist Mono', sans-serif;
+                font-size: 14px;
+                min-height: 20px;
+                border-radius: 6px;
+            }
+            QToolBar QToolButton:hover {
+                background-color: #f0ede3;
+                border-color: #d4d0c4;
+            }
+            QToolBar QToolButton:pressed {
+                background-color: #e6e3d6;
+            }
+            QToolBar QToolButton:disabled {
+                background-color: #f5f4f1;
+                color: #a0a0a0;
+                border-color: #e6e3d6;
+            }
+            QToolBar::separator {
+                background-color: rgba(255, 255, 255, 0.2);
+                width: 1px;
+                margin: 4px 8px;
+            }
+        """)
+        
+        # Set toolbar to be movable and set proper size policy
+        toolbar.setMovable(False)
+        toolbar.setFloatable(False)
+        
         self.addToolBar(toolbar)
         
         # Open file button
@@ -482,12 +661,12 @@ class MainWindow(QMainWindow):
             <head>
                 <style>
                     body {{ 
-                        font-family: 'Inter', 'Helvetica Neue', Arial, sans-serif; 
+                        font-family: 'Geist Mono', 'Helvetica Neue', Arial, sans-serif; 
                         font-size: 18px;
                         line-height: 1.5;
                     }}
                     pre {{ 
-                        font-family: 'Inter', 'Helvetica Neue', Arial, sans-serif;
+                        font-family: 'Geist Mono', 'Helvetica Neue', Arial, sans-serif;
                         font-size: 18px;
                         white-space: pre-wrap;
                         margin-top: 20px;

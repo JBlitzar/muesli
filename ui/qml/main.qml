@@ -9,6 +9,7 @@ ApplicationWindow {
     width: 1024
     height: 768
     title: "Muesli - Voice Transcription & Summarization"
+    color: backgroundColor
     
     // Properties for binding with Python
     property string transcriptText: ""
@@ -29,10 +30,10 @@ ApplicationWindow {
     property color textColor: "#333333"
     property color lightTextColor: "#7f8c8d"
     property color backgroundColor: "#fcfbf6"
-    property color cardColor: "#ffffff"
+    property color cardColor: "#fcfbf6"
     
     // Font settings
-    property string fontFamily: "Inter, Helvetica Neue, Arial, sans-serif"
+    property string fontFamily: "Geist Mono, Helvetica Neue, Arial, sans-serif"
     property int baseFontSize: 18
     /* Simple ASCII spinner setup */
     property var  spinnerChars: ["-", "\\\\", "|", "/"]
@@ -52,26 +53,26 @@ ApplicationWindow {
     // Main content
     ColumnLayout {
         anchors.fill: parent
-        anchors.margins: 12
-        spacing: 12
+        anchors.margins: 20
+        spacing: 16
         
         // Toolbar
         Rectangle {
             Layout.fillWidth: true
-            height: 50
+            height: 60
             color: primaryColor
-            radius: 4
+            radius: 12
             
             RowLayout {
                 anchors.fill: parent
-                anchors.margins: 8
-                spacing: 8
+                anchors.margins: 16
+                spacing: 12
                 
                 // Logo/Title
                 Label {
                     text: "Muesli"
                     color: "white"
-                    font.pixelSize: baseFontSize
+                    font.pixelSize: baseFontSize + 2
                     font.bold: true
                     font.family: fontFamily
                 }
@@ -85,6 +86,27 @@ ApplicationWindow {
                     text: "Open File"
                     icon.name: "document-open"
                     
+                    background: Rectangle {
+                        color: parent.pressed ? Qt.darker(backgroundColor, 1.1) : backgroundColor
+                        radius: 8
+                        border.width: 1
+                        border.color: Qt.darker(backgroundColor, 1.2)
+                    }
+                    
+                    contentItem: RowLayout {
+                        spacing: 6
+                        Image {
+                            source: "qrc:/icons/" + openFileButton.icon.name
+                            Layout.preferredWidth: 16
+                            Layout.preferredHeight: 16
+                        }
+                        Text {
+                            text: openFileButton.text
+                            font: openFileButton.font
+                            color: textColor
+                        }
+                    }
+                    
                     onClicked: {
                         // Will be connected to Python
                         openFileRequested()
@@ -96,6 +118,21 @@ ApplicationWindow {
                     id: recordButton
                     text: isRecording ? "Stop Recording" : "Record"
                     icon.name: isRecording ? "media-playback-stop" : "media-record"
+                    
+                    background: Rectangle {
+                        color: parent.pressed ? Qt.darker(backgroundColor, 1.1) : backgroundColor
+                        radius: 8
+                        border.width: 1
+                        border.color: Qt.darker(backgroundColor, 1.2)
+                    }
+                    
+                    contentItem: Text {
+                        text: recordButton.text
+                        font: recordButton.font
+                        color: textColor
+                        horizontalAlignment: Text.AlignHCenter
+                        verticalAlignment: Text.AlignVCenter
+                    }
                     
                     onClicked: {
                         // Will be connected to Python
@@ -110,6 +147,22 @@ ApplicationWindow {
                     icon.name: "document-edit"
                     enabled: !isTranscribing
                     
+                    background: Rectangle {
+                        color: parent.pressed ? Qt.darker(backgroundColor, 1.1) : backgroundColor
+                        radius: 8
+                        border.width: 1
+                        border.color: Qt.darker(backgroundColor, 1.2)
+                        opacity: parent.enabled ? 1.0 : 0.6
+                    }
+                    
+                    contentItem: Text {
+                        text: transcribeButton.text
+                        font: transcribeButton.font
+                        color: textColor
+                        horizontalAlignment: Text.AlignHCenter
+                        verticalAlignment: Text.AlignVCenter
+                    }
+                    
                     onClicked: {
                         // Will be connected to Python
                         transcribeRequested()
@@ -122,6 +175,22 @@ ApplicationWindow {
                     text: "Summarize"
                     icon.name: "view-list-text"
                     enabled: hasTranscript && !isSummarizing
+                    
+                    background: Rectangle {
+                        color: parent.pressed ? Qt.darker(backgroundColor, 1.1) : backgroundColor
+                        radius: 8
+                        border.width: 1
+                        border.color: Qt.darker(backgroundColor, 1.2)
+                        opacity: parent.enabled ? 1.0 : 0.6
+                    }
+                    
+                    contentItem: Text {
+                        text: summarizeButton.text
+                        font: summarizeButton.font
+                        color: textColor
+                        horizontalAlignment: Text.AlignHCenter
+                        verticalAlignment: Text.AlignVCenter
+                    }
                     
                     onClicked: {
                         // Will be connected to Python
@@ -136,12 +205,14 @@ ApplicationWindow {
             Layout.fillWidth: true
             Layout.fillHeight: true
             color: cardColor
-            radius: 4
+            radius: 12
+            border.width: 1
+            border.color: Qt.darker(backgroundColor, 1.1)
             
             ColumnLayout {
                 anchors.fill: parent
-                anchors.margins: 12
-                spacing: 12
+                anchors.margins: 20
+                spacing: 16
                 
                 // Header
                 RowLayout {
@@ -149,7 +220,7 @@ ApplicationWindow {
                     
                     Label {
                         text: "Summary & Transcript"
-                        font.pixelSize: baseFontSize
+                        font.pixelSize: baseFontSize + 2
                         font.bold: true
                         font.family: fontFamily
                         color: textColor
@@ -168,61 +239,83 @@ ApplicationWindow {
                     // Text-based loading spinner
                     RowLayout {
                         visible: spinnerActive
-                        spacing: 4
-                        Label {
-                            text: "Loading"
-                            color: lightTextColor
-                            font.family: fontFamily
-                            font.pixelSize: baseFontSize
-                        }
-                        Label {
-                            text: spinnerChar
-                            color: accentColor
-                            font.family: fontFamily
-                            font.pixelSize: baseFontSize
+                        spacing: 6
+                        
+                        Rectangle {
+                            width: 80
+                            height: 32
+                            color: Qt.darker(backgroundColor, 1.05)
+                            radius: 16
+                            border.width: 1
+                            border.color: Qt.darker(backgroundColor, 1.15)
+                            
+                            RowLayout {
+                                anchors.centerIn: parent
+                                spacing: 4
+                                
+                                Label {
+                                    text: "Loading"
+                                    color: lightTextColor
+                                    font.family: fontFamily
+                                    font.pixelSize: 12
+                                }
+                                Label {
+                                    text: spinnerChar
+                                    color: accentColor
+                                    font.family: fontFamily
+                                    font.pixelSize: 12
+                                }
+                            }
                         }
                     }
                 }
                 
                 // Combined content
-                ScrollView {
+                Rectangle {
                     Layout.fillWidth: true
                     Layout.fillHeight: true
+                    color: backgroundColor
+                    radius: 8
+                    border.width: 1
+                    border.color: Qt.darker(backgroundColor, 1.1)
                     
-                    TextArea {
-                        id: combinedTextArea
-                        text: combinedContent
-                        wrapMode: TextEdit.Wrap
-                        width: parent.width
-                        readOnly: true
-                        font.pixelSize: baseFontSize
-                        font.family: fontFamily
-                        lineHeight: 1.5
-                        leftPadding: 16
-                        rightPadding: 16
-                        topPadding: 8
-                        bottomPadding: 8
+                    ScrollView {
+                        anchors.fill: parent
+                        anchors.margins: 2
                         
-                        // Set a preferred width for the text to enforce ~65 character limit
-                        // This is approximate as character width varies with proportional fonts
-                        Layout.preferredWidth: baseFontSize * 40
-                        
-                        background: Rectangle { 
-                            color: "transparent"
-                            border.width: 1
-                            border.color: "#e0e0e0"
-                            radius: 4
-                        }
-                        
-                        Label {
-                            anchors.fill: parent
-                            text: "Summary and transcript will appear here"
-                            color: lightTextColor
-                            font.family: fontFamily
+                        TextArea {
+                            id: combinedTextArea
+                            text: combinedContent
+                            wrapMode: TextEdit.Wrap
+                            readOnly: true
                             font.pixelSize: baseFontSize
-                            visible: combinedContent.length === 0
-                            horizontalAlignment: Text.AlignHCenter
-                            verticalAlignment: Text.AlignVCenter
+                            font.family: fontFamily
+                            lineHeight: 1.5
+                            leftPadding: 24
+                            rightPadding: 24
+                            topPadding: 20
+                            bottomPadding: 20
+                            color: textColor
+                            
+                            // Set a preferred width for the text to enforce ~65 character limit
+                            // This is approximate as character width varies with proportional fonts
+                            Layout.preferredWidth: baseFontSize * 40
+                            
+                            background: Rectangle { 
+                                color: backgroundColor
+                                radius: 6
+                            }
+                            
+                            Label {
+                                anchors.fill: parent
+                                text: "Summary and transcript will appear here"
+                                color: lightTextColor
+                                font.family: fontFamily
+                                font.pixelSize: baseFontSize
+                                visible: combinedContent.length === 0
+                                horizontalAlignment: Text.AlignHCenter
+                                verticalAlignment: Text.AlignVCenter
+                            }
                         }
                     }
                 }
@@ -232,14 +325,14 @@ ApplicationWindow {
         // Status bar
         Rectangle {
             Layout.fillWidth: true
-            height: 36
+            height: 44
             color: primaryColor
-            radius: 4
+            radius: 12
             
             RowLayout {
                 anchors.fill: parent
-                anchors.margins: 8
-                spacing: 8
+                anchors.margins: 16
+                spacing: 12
                 
                 Label {
                     text: statusMessage
@@ -250,28 +343,49 @@ ApplicationWindow {
                 }
                 
                 // Progress bar (only visible during operations)
-                ProgressBar {
-                    id: progressBar
-                    value: transcriptionProgress
+                Rectangle {
+                    width: 160
+                    height: 20
+                    color: Qt.darker(primaryColor, 1.2)
+                    radius: 10
                     visible: isTranscribing
-                    width: 150
+                    
+                    Rectangle {
+                        width: parent.width * transcriptionProgress
+                        height: parent.height
+                        color: accentColor
+                        radius: 10
+                        
+                        Behavior on width {
+                            NumberAnimation { duration: 200 }
+                        }
+                    }
                 }
                 
                 // Alternative loading indicator for status bar
-                RowLayout {
+                Rectangle {
+                    width: 80
+                    height: 24
+                    color: Qt.darker(primaryColor, 1.1)
+                    radius: 12
                     visible: spinnerActive
-                    spacing: 2
-                    Label {
-                        text: "Loading"
-                        color: "white"
-                        font.family: fontFamily
-                        font.pixelSize: 14
-                    }
-                    Label {
-                        text: spinnerChar
-                        color: accentColor
-                        font.family: fontFamily
-                        font.pixelSize: 14
+                    
+                    RowLayout {
+                        anchors.centerIn: parent
+                        spacing: 4
+                        
+                        Label {
+                            text: "Loading"
+                            color: "white"
+                            font.family: fontFamily
+                            font.pixelSize: 12
+                        }
+                        Label {
+                            text: spinnerChar
+                            color: accentColor
+                            font.family: fontFamily
+                            font.pixelSize: 12
+                        }
                     }
                 }
             }
