@@ -16,7 +16,7 @@ import subprocess
 import tempfile
 from enum import Enum
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, Tuple, Union
+from typing import Any, Callable, Dict, List, Optional, Union
 
 try:
     import httpx
@@ -24,9 +24,7 @@ try:
 except ImportError:
     HTTPX_AVAILABLE = False
 
-import numpy as np
-
-from muesli.core.models import Transcript, TranscriptSegment
+from models import Transcript, TranscriptSegment
 
 logger = logging.getLogger(__name__)
 
@@ -209,7 +207,6 @@ class WhisperTranscriber:
         if system == "Darwin" and platform.processor() == "arm":
             try:
                 # Check if we're on macOS 12.3+ with Apple Silicon
-                import platform
                 mac_version = tuple(map(int, platform.mac_ver()[0].split('.')))
                 if mac_version >= (12, 3):
                     logger.info("Apple Silicon detected, using MPS for transcription")
@@ -422,7 +419,7 @@ class WhisperTranscriber:
                 raise RuntimeError("Failed to initialize model")
         
         # Create audio file object
-        from muesli.core.models import AudioFile
+        from models import AudioFile
         audio_file = AudioFile.from_path(audio_path)
         
         # Create empty transcript

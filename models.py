@@ -2,19 +2,18 @@
 Data models for the Muesli application.
 
 This module defines the core data models used throughout the application,
-including representations of audio files, transcripts, and summaries.
-All models are implemented using Pydantic for validation and serialization.
+including audio files, transcripts, and summaries.
 """
 
 import datetime
-from enum import Enum
+import enum
 from pathlib import Path
-from typing import Dict, List, Optional, Union, Any
+from typing import Any, Dict, List, Optional, Union
 
-from pydantic import BaseModel, Field, field_validator, ConfigDict, FilePath
+from pydantic import BaseModel, Field, field_validator, model_validator, ConfigDict
 
 
-class AudioFormat(str, Enum):
+class AudioFormat(str, enum.Enum):
     """Supported audio file formats."""
     WAV = "wav"
     MP3 = "mp3"
@@ -30,37 +29,6 @@ class AudioFormat(str, Enum):
             return cls(ext)
         except ValueError:
             raise ValueError(f"Unsupported audio format: {ext}")
-
-
-class TranscriptSegment(BaseModel):
-    """A segment of a transcript with timestamp information."""
-    
-    start: float = Field(
-        ...,
-        description="Start time of segment in seconds"
-    )
-    
-    end: float = Field(
-        ...,
-        description="End time of segment in seconds"
-    )
-    
-    text: str = Field(
-        ...,
-        description="Transcribed text for this segment"
-    )
-    
-    confidence: float = Field(
-        default=1.0,
-        ge=0.0,
-        le=1.0,
-        description="Confidence score for this segment (0.0-1.0)"
-    )
-    
-    speaker: Optional[int] = Field(
-        default=None,
-        description="Speaker ID if diarization is enabled"
-    )
 
 
 class AudioFile(BaseModel):
@@ -95,11 +63,6 @@ class AudioFile(BaseModel):
         description="Number of audio channels"
     )
     
-    bit_depth: Optional[int] = Field(
-        default=None,
-        description="Bit depth of audio"
-    )
-    
     file_size: Optional[int] = Field(
         default=None,
         description="File size in bytes"
@@ -119,9 +82,9 @@ class AudioFile(BaseModel):
     @classmethod
     def validate_path(cls, v: Path) -> Path:
         """Validate that the audio file exists."""
-        if not v.exists():
+        if not v.exists() and str(v) != "stream":
             raise ValueError(f"Audio file does not exist: {v}")
-        if not v.is_file():
+        if v.exists() and not v.is_file():
             raise ValueError(f"Path is not a file: {v}")
         return v
     
@@ -132,10 +95,7 @@ class AudioFile(BaseModel):
         format = AudioFormat.from_path(path)
         
         # Get basic file info
-        file_size = path.stat().st_size
-        
-        # Note: In a real implementation, we would use a library like
-        # pydub or ffmpeg to extract more detailed audio information
+        file_size = path.stat().st_size if path.exists() else 0
         
         return cls(
             path=path,
@@ -145,7 +105,38 @@ class AudioFile(BaseModel):
     
     def exists(self) -> bool:
         """Check if the audio file still exists."""
-        return self.path.exists()
+        return self.path.exists() or str(self.path) == "stream"
+
+
+class TranscriptSegment(BaseModel):
+    """A segment of a transcript with timestamp information."""
+    
+    start: float = Field(
+        ...,
+        description="Start time of segment in seconds"
+    )
+    
+    end: float = Field(
+        ...,
+        description="End time of segment in seconds"
+    )
+    
+    text: str = Field(
+        ...,
+        description="Transcribed text for this segment"
+    )
+    
+    confidence: float = Field(
+        default=1.0,
+        ge=0.0,
+        le=1.0,
+        description="Confidence score for this segment (0.0-1.0)"
+    )
+    
+    speaker: Optional[int] = Field(
+        default=None,
+        description="Speaker ID if diarization is enabled"
+    )
 
 
 class Transcript(BaseModel):
@@ -236,37 +227,9 @@ class Transcript(BaseModel):
                 segment for segment in self.segments
                 if search_text in segment.text
             ]
-    
-    def to_srt(self) -> str:
-        """Convert the transcript to SubRip (SRT) format."""
-        srt_lines = []
-        for i, segment in enumerate(self.segments, 1):
-            # Format: sequence number
-            srt_lines.append(str(i))
-            
-            # Format: start --> end time (HH:MM:SS,mmm)
-            start_time = self._format_srt_time(segment.start)
-            end_time = self._format_srt_time(segment.end)
-            srt_lines.append(f"{start_time} --> {end_time}")
-            
-            # Format: text (can be multiple lines)
-            srt_lines.append(segment.text)
-            
-            # Empty line between entries
-            srt_lines.append("")
-        
-        return "\n".join(srt_lines)
-    
-    @staticmethod
-    def _format_srt_time(seconds: float) -> str:
-        """Format time in seconds to SRT time format (HH:MM:SS,mmm)."""
-        hours = int(seconds // 3600)
-        minutes = int((seconds % 3600) // 60)
-        seconds = seconds % 60
-        return f"{hours:02d}:{minutes:02d}:{seconds:06.3f}".replace(".", ",")
 
 
-class SummaryType(str, Enum):
+class SummaryType(str, enum.Enum):
     """Types of summaries that can be generated."""
     BULLET_POINTS = "bullet_points"
     PARAGRAPH = "paragraph"

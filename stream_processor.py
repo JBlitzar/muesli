@@ -26,8 +26,8 @@ except ImportError:
 
 import numpy as np
 
-from muesli.core.models import TranscriptSegment
-from muesli.transcription.whisper_wrapper import WhisperTranscriber
+from models import TranscriptSegment
+from whisper_wrapper import WhisperTranscriber
 
 logger = logging.getLogger(__name__)
 

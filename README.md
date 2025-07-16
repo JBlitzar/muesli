@@ -1,92 +1,21 @@
 # Muesli
 
-Offline-first, privacy-centric voice transcription **and** summarisation desktop application.
+Offline-first, privacy-centric voice **transcription** and **summarisation** desktop application powered by  
+[whisper.cpp](https://github.com/ggerganov/whisper.cpp) and a local LLM served by [Ollama](https://ollama.ai/).
 
-Muesli delivers the convenience of modern cloud transcription tools while ensuring that **all audio, transcripts and AI inference stay on your machine**. No uploads, no telemetry, no compromises.
-
----
-
-## Key Features
-
-- **100 % on-device processing** – powered by `whisper.cpp` and a local LLM (default: `ollama llama3:8b-instruct`).
-- **Streaming transcription** – start/stop recording from the UI; text appears in real-time.
-- **Editable transcript viewer** – timestamped rich text with inline corrections.
-- **One-click summaries** – generate concise bullet or paragraph summaries locally.
-- **Search & navigation** – full-text search across your library, jump to any timestamp.
-- **Multi-format export** – Plain text, Markdown, SRT or JSON.
-- **Cross-platform UI** – PySide6 + QML, dark/light themes, keyboard shortcuts.
-- **Completely private** – network disabled by default; files remain on disk unless you choose to share them.
+― Inspired by the lean “one-file” style of `agentic-assistant`, Muesli keeps the codebase small while offering a polished Qt / QML interface.
 
 ---
 
-## Requirements
+## Features
 
-| Component | Minimum Version |
-|-----------|-----------------|
-| Python    | 3.11            |
-| Poetry    | 1.6             |
-| PySide6   | 6.5             |
-| whisper.cpp model | any GGUF / ggml model (tiny–large-v3) |
-| Ollama (optional, for summaries) | 0.1.32 |
-
-macOS (M-series & Intel), Windows 10 +, and modern Linux distributions are supported.
-
----
-
-## Installation
-
-1. **Clone the repository**
-   ```bash
-   git clone https://github.com/JBlitzar/muesli.git
-   cd muesli
-   ```
-
-2. **Install dependencies with Poetry**
-   ```bash
-   poetry install --with dev
-   ```
-
-3. **Download a Whisper model**  
-   (until automatic download is implemented)
-   ```bash
-   mkdir -p ~/.muesli/models/whisper
-   # example for the small model
-   curl -L -o ~/.muesli/models/whisper/ggml-small.bin \
-        https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-small.bin
-   ```
-
-4. **(Optional) Pull an LLM model with Ollama**
-   ```bash
-   # Install Ollama from https://ollama.ai
-   ollama pull llama3:8b-instruct
-   ```
-
----
-
-## Usage
-
-### Graphical Interface
-
-```bash
-poetry run muesli
-```
-
-* Press **Start Recording** to begin live transcription.  
-* Press **Stop Recording** to end the session.  
-* Click **Generate Summary** to create a local LLM summary once transcription stops.
-
-### Command-line Mode
-
-```bash
-# Transcribe a file
-poetry run muesli --transcribe path/to/audio.wav
-
-# Headless (no UI) with verbose logging
-poetry run muesli --no-ui -v --transcribe interview.mp3
-```
-
-Configuration is stored in `~/.muesli/config.yaml`.  
-Environment variables prefixed with `MUESLI_` override any key (e.g. `MUESLI_TRANSCRIPTION_MODEL=small`).
+- 🎙️ Real-time microphone transcription with optional VAD
+- 📂 Drag-and-drop or “Open File” transcription for WAV / MP3 / M4A / FLAC / OGG
+- 🧠 Local LLM summarisation (bullet-points, paragraph, executive etc.)
+- 💾 Save transcript as **.txt** or **.srt**, save summary as **.txt**
+- 🌗 Dark / Light / System theme
+- 💻 Runs completely offline – network calls can be disabled in `config.yml`
+- 🪄 Single-executable build possible via `pyinstaller`
 
 ---
 
@@ -94,23 +23,165 @@ Environment variables prefixed with `MUESLI_` override any key (e.g. `MUESLI_TRA
 
 ```
 muesli/
-├── core/            # Application orchestrator, config, models, job queue
-├── transcription/   # whisper.cpp wrapper + streaming processor
-├── llm/             # Ollama client, prompt templates, summariser
-├── ui/              # PySide6 widgets & QML front-end
-│   └── qml/         # QML files (main.qml, Dashboard.qml, etc.)
-└── main.py          # CLI & GUI entry point
+├── main.py            # Application entry-point & orchestration
+├── models.py          # Pydantic data models (AudioFile, Transcript, Summary…)
+├── whisper_wrapper.py # Thin subprocess wrapper around whisper.cpp
+├── stream_processor.py# Microphone capture & streaming transcription
+├── ollama_client.py   # Minimal HTTP client for local Ollama server
+├── summarizer.py      # Generates summaries with the LLM client
+└── ui/
+    ├── main_window.py # PySide6 main window (widgets)
+    └── qml/           # Optional QML front-end
+        └── main.qml
 ```
 
-Each sub-package exposes a clean public interface; the **core** package is the single point of coordination between modules.
+No databases, message queues or complex dependency injection frameworks – the **`MuesliApp`** class in `main.py` wires everything together.
+
+---
+
+## Requirements
+
+| Requirement            | Purpose                          |
+| ---------------------- | -------------------------------- |
+| Python **3.8 +**       | Core application                 |
+| `whisper.cpp` binary   | On-device speech-to-text         |
+| `ffmpeg` (recommended) | Decode/convert non-WAV audio     |
+| Ollama (optional)      | Local LLM for summaries          |
+| **Poetry**             | Dependency management (optional) |
+
+Python deps are listed in `pyproject.toml` – main ones are **PySide6**, **pydantic**, **httpx**, **PyAudio**, **numpy**.
+
+---
+
+## Installation
+
+### 1. Clone & set up Python environment
+
+```bash
+git clone https://github.com/JBlitzar/muesli
+cd muesli
+# with Poetry
+poetry install --with dev
+poetry shell
+# or plain pip
+pip install -r requirements.txt   # generated by `poetry export`
+```
+
+### 2. Build or download whisper.cpp
+
+```bash
+git clone https://github.com/ggerganov/whisper.cpp
+cd whisper.cpp && make
+# put `main` (or `whisper`) binary somewhere in PATH
+```
+
+`Muesli` will auto-download the GGML model you choose (default **medium**).  
+You can also drop a file such as `ggml-medium.bin` into `~/.muesli/models/whisper/`.
+
+### 3. (Optional) Install Ollama
+
+```bash
+curl https://ollama.ai/install.sh | sh
+ollama pull llama3:8b-instruct
+```
+
+### 4. Run
+
+```bash
+python -m muesli             # normal
+python -m muesli --verbose   # debug logs
+python -m muesli --transcribe path/to/audio.wav  # CLI mode, prints transcript
+```
+
+---
+
+## Usage
+
+### Graphical UI
+
+1. Start `muesli` (double-click or `python -m muesli`)
+2. Click **Open File** _or_ **Record**
+3. Watch live transcript appear; press **Summarize** to run LLM
+4. Save results via **File → Save Transcript / Save Summary**
+
+### Command-line shortcuts
+
+```
+--no-ui              run headless
+--config path.yml    custom configuration
+--transcribe file    transcribe and print to stdout
+-v / --verbose       debug logs
+```
+
+Environment variable overrides follow the pattern `MUESLI_SECTION_KEY=value`, e.g.
+
+```bash
+export MUESLI_TRANSCRIPTION_MODEL=small
+export MUESLI_LLM_PROVIDER=none
+```
+
+---
+
+## Configuration (`muesli.yml`)
+
+```yaml
+transcription:
+  model: medium # tiny / base / small / medium / large / large-v3
+  auto_language_detection: true
+llm:
+  provider: ollama
+  model_name: llama3:8b-instruct
+privacy:
+  allow_network: false
+ui:
+  theme: system
+```
+
+Place it in:
+
+- `./muesli.yml` (project root)
+- `~/.muesli/config.yml` (user)
+
+---
+
+## Component Details
+
+| Component                                                | Notes                                                                                                    |
+| -------------------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
+| **WhisperTranscriber** (`whisper_wrapper.py`)            | Spawns whisper.cpp via `subprocess`, streams progress, verifies model checksum.                          |
+| **TranscriptionStreamProcessor** (`stream_processor.py`) | Captures microphone audio with PyAudio, performs VAD, chunks audio into ~5 s segments, feeds to Whisper. |
+| **OllamaClient** (`ollama_client.py`)                    | Thin HTTPX wrapper around `/api/generate`, supports streaming responses.                                 |
+| **TranscriptSummarizer** (`summarizer.py`)               | Builds prompt templates and calls `OllamaClient` to get summary.                                         |
+| **MuesliApp** (`main.py`)                                | Loads config, sets up components, exposes Qt signals for UI.                                             |
+| **UI** (`ui/`)                                           | PySide6 widgets + optional QML; auto-updates via Qt signals.                                             |
+
+---
+
+## Development
+
+```bash
+poetry run black .       # format
+poetry run isort .       # import order
+poetry run ruff .        # lint
+poetry run mypy muesli   # type-check
+poetry run pytest -q     # tests (minimal)
+```
+
+---
+
+## Roadmap
+
+- Speaker diarisation
+- Multi-file batch mode
+- Electron-free mobile build via Qt-for-Android/iOS
 
 ---
 
 ## License
 
-Muesli is released under the **GNU Affero General Public License v3.0** (AGPL-3.0).  
-See the [`LICENSE`](LICENSE) file for the full text.
+The source code is released under the **MIT License**.  
+Whisper model weights are distributed under their respective licenses (MIT for ggml binaries).  
+“Whisper” and “GPT” are trademarks of their respective owners.
 
-Commercial enquiries or custom licensing? Please reach out via the project’s issue tracker.
-
----
+Enjoy your breakfast 🥣.  
+– **Muesli** team
