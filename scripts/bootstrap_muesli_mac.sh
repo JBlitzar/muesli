@@ -33,14 +33,14 @@ err() { echo -e "\033[1;31m[error]\033[0m $*"; }
 # 1. Homebrew + native packages
 # -------------------------------------------------------------
 if ! command -v brew >/dev/null 2>&1; then
-  log "Homebrew not found – installing …"
+  log "Homebrew not found--installing..."
   NONINTERACTIVE=1 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
   eval "$($(command -v brew) shellenv)"
 else
   eval "$($(command -v brew) shellenv)"
 fi
 
-BREW_PKGS=(portaudio ffmpeg cmake whisper-cpp)
+BREW_PKGS=(portaudio ffmpeg cmake whisper-cpp ollama)
 for pkg in "${BREW_PKGS[@]}"; do
   if brew list "$pkg" &>/dev/null; then
     log "brew package '$pkg' already installed"
@@ -49,16 +49,6 @@ for pkg in "${BREW_PKGS[@]}"; do
     brew install "$pkg"
   fi
 done
-
-# -------------------------------------------------------------
-# 2. Ollama runtime (LLM provider)
-# -------------------------------------------------------------
-if ! command -v ollama >/dev/null 2>&1; then
-  log "Installing Ollama runtime"
-  curl -fsSL https://ollama.com/install.sh | sh
-else
-  log "Ollama already present ($(ollama --version))"
-fi
 
 # -------------------------------------------------------------
 # 3. Python virtual environment + pip deps
