@@ -35,6 +35,8 @@ BACKGROUND_COLOR = "#fcfbf6"  # Main background
 BORDER_COLOR = "#e3e6d6"  # Border color
 TEXT_COLOR = "#333333"  # Primary text color
 SECONDARY_TEXT_COLOR = "#7f8c8d"  # Secondary text color
+SCROLL_BAR_BACKGROUND = "#ebeced"  # Scroll bar track background
+BUTTON_HOVER_COLOR = "#ebeced"  # Button hover background color
 
 class MainWindow(QMainWindow):
     """
@@ -157,7 +159,7 @@ class MainWindow(QMainWindow):
                 selection-color: white;
             }}
             QScrollBar:vertical {{
-                background-color: #f0ede3;
+                background-color: {SCROLL_BAR_BACKGROUND};
                 border: none;
                 border-radius: 6px;
                 width: 12px;
@@ -272,7 +274,7 @@ class MainWindow(QMainWindow):
         self.loading_label.setFont(loading_font)
         self.loading_label.setStyleSheet("""
             QLabel {
-                color: white;
+                color: black;
                 background-color: rgba(211, 219, 230, 0.2);
                 border-radius: 0px;
                 padding: 4px 8px;
@@ -384,7 +386,7 @@ class MainWindow(QMainWindow):
                 border-radius: 6px;
             }}
             QToolBar QToolButton:hover {{
-                background-color: #f0ede3;
+                background-color: {BUTTON_HOVER_COLOR};
                 border-color: #d4d0c4;
             }}
             QToolBar QToolButton:pressed {{
