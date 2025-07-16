@@ -370,37 +370,6 @@ class AudioFile(BaseModel):
         return self.path.exists() or str(self.path) == "stream"
 
 
-class TranscriptSegment(BaseModel):
-    """A segment of a transcript with timestamp information."""
-    
-    start: float = Field(
-        ...,
-        description="Start time of segment in seconds"
-    )
-    
-    end: float = Field(
-        ...,
-        description="End time of segment in seconds"
-    )
-    
-    text: str = Field(
-        ...,
-        description="Transcribed text for this segment"
-    )
-    
-    confidence: float = Field(
-        default=1.0,
-        ge=0.0,
-        le=1.0,
-        description="Confidence score for this segment (0.0-1.0)"
-    )
-    
-    speaker: Optional[int] = Field(
-        default=None,
-        description="Speaker ID if diarization is enabled"
-    )
-
-
 class Transcript(BaseModel):
     """Represents a transcript of an audio file."""
     
@@ -414,9 +383,9 @@ class Transcript(BaseModel):
         description="The audio file this transcript is for"
     )
     
-    segments: List[TranscriptSegment] = Field(
-        default_factory=list,
-        description="List of transcript segments with timestamps"
+    text: str = Field(
+        default_factory=str,
+        description="Full transcript text"
     )
     
     language: str = Field(
@@ -449,74 +418,7 @@ class Transcript(BaseModel):
         description="Additional metadata about the transcript"
     )
     
-    @property
-    def text(self) -> str:
-        """Get the full transcript text."""
-        return " ".join(segment.text for segment in self.segments)
-    
-    @property
-    def duration(self) -> float:
-        """Get the duration of the transcript in seconds."""
-        if not self.segments:
-            return 0.0
-        return max(segment.end for segment in self.segments)
-    
-    def add_segment(self, segment: TranscriptSegment) -> None:
-        """Add a segment to the transcript."""
-        self.segments.append(segment)
-        self.updated_at = datetime.datetime.now()
-    
-    def find_segments_by_time(self, start_time: float, end_time: Optional[float] = None) -> List[TranscriptSegment]:
-        """Find segments that overlap with the given time range."""
-        if end_time is None:
-            end_time = start_time
-            
-        return [
-            segment for segment in self.segments
-            if (segment.start <= end_time and segment.end >= start_time)
-        ]
-    
-    def find_segments_by_text(self, search_text: str, case_sensitive: bool = False) -> List[TranscriptSegment]:
-        """Find segments containing the given text."""
-        if not case_sensitive:
-            search_text = search_text.lower()
-            return [
-                segment for segment in self.segments
-                if search_text in segment.text.lower()
-            ]
-        else:
-            return [
-                segment for segment in self.segments
-                if search_text in segment.text
-            ]
-    
-    def to_srt(self) -> str:
-        """Convert the transcript to SubRip (SRT) format."""
-        srt_lines = []
-        for i, segment in enumerate(self.segments, 1):
-            # Format: sequence number
-            srt_lines.append(str(i))
-            
-            # Format: start --> end time (HH:MM:SS,mmm)
-            start_time = self._format_srt_time(segment.start)
-            end_time = self._format_srt_time(segment.end)
-            srt_lines.append(f"{start_time} --> {end_time}")
-            
-            # Format: text (can be multiple lines)
-            srt_lines.append(segment.text)
-            
-            # Empty line between entries
-            srt_lines.append("")
-        
-        return "\n".join(srt_lines)
-    
-    @staticmethod
-    def _format_srt_time(seconds: float) -> str:
-        """Format time in seconds to SRT time format (HH:MM:SS,mmm)."""
-        hours = int(seconds // 3600)
-        minutes = int((seconds % 3600) // 60)
-        seconds = seconds % 60
-        return f"{hours:02d}:{minutes:02d}:{seconds:06.3f}".replace(".", ",")
+    # No segment-level helpers needed for plain-text transcripts.
 
 
 class SummaryType(str, enum.Enum):
@@ -853,7 +755,7 @@ class MuesliApp(QObject):
             
             # Update transcript
             with self._lock:
-                transcript.segments = result.segments
+                transcript.text = result.text
                 transcript.language = result.language
                 transcript.model_name = result.model_name
                 transcript.is_complete = True
@@ -907,7 +809,7 @@ class MuesliApp(QObject):
             transcript_id=transcript.id,
             device_index=device_index,
             language=language or self.config.transcription.default_language,
-            on_segment=self._on_stream_segment,
+            on_transcription_update=self._on_transcription_update,
             on_error=lambda e: self.transcription_failed.emit(transcript.id, str(e)),
         )
         
@@ -920,23 +822,23 @@ class MuesliApp(QObject):
         """Stop streaming transcription."""
         self.stream_processor.stop()
     
-    def _on_stream_segment(self, transcript_id: str, segment: TranscriptSegment) -> None:
+    def _on_transcription_update(self, transcript_id: str, full_text: str) -> None:
         """
-        Handle a new segment from streaming transcription.
+        Handle transcript text updates from real-time transcription.
         
         Args:
-            transcript_id: ID of the transcript
-            segment: New transcript segment
+            transcript_id: ID of the transcript being updated
+            full_text: The current full transcript text
         """
         with self._lock:
             transcript = self._active_transcripts.get(transcript_id)
             if transcript:
-                transcript.add_segment(segment)
-                # Signal progress update
+                transcript.text = full_text
+                # Emit progress as unknown (use 0-1 dummy value); here set to 1.0 when update received.
                 self.transcription_progress.emit(
-                    transcript_id, 
-                    len(transcript.segments) / 10.0,  # Approximate progress
-                    f"Added segment: {segment.text[:30]}..."
+                    transcript_id,
+                    1.0,
+                    f"Transcript updated ({len(full_text)} chars)"
                 )
     
     def get_transcript(self, transcript_id: str) -> Optional[Transcript]:

@@ -237,7 +237,7 @@ class WhisperTranscriber:
                 full_text: Optional[str] = None
                 if isinstance(data, dict):
                     if "transcription" in data and isinstance(data["transcription"], list):
-                        full_text = data["transcription"][0].get("text")
+                        full_text = "\n".join(data["transcription"][i]["text"] for i in range(len(data["transcription"])))
                     elif "text" in data:  # fallback
                         full_text = data.get("text")
 

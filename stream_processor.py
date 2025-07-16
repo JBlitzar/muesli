@@ -82,6 +82,8 @@ class TranscriptionStreamProcessor:
         
         # Callbacks
         self._on_transcription_complete = None
+        # New callback for plain-text transcript updates
+        self._on_transcription_update = None
         self._on_error = None
         
         # Current transcript
@@ -97,6 +99,7 @@ class TranscriptionStreamProcessor:
         transcript_id: str,
         device_index: Optional[int] = None,
         language: Optional[str] = None,
+        on_transcription_update: Optional[Callable[[str, str], None]] = None,
         on_transcription_complete: Optional[Callable[[str], None]] = None,
         on_error: Optional[Callable[[Exception], None]] = None,
     ) -> bool:
@@ -107,6 +110,8 @@ class TranscriptionStreamProcessor:
             transcript_id: ID of the transcript to update
             device_index: Index of audio input device or None for default
             language: Language code (ISO 639-1) or None for auto-detection
+            on_transcription_update: Callback when transcript text is available/
+                updated. Called with (transcript_id, full_text).
             on_transcription_complete: Callback when transcription is complete
             on_error: Callback for errors
             
@@ -129,6 +134,7 @@ class TranscriptionStreamProcessor:
         self._transcript_id = transcript_id
         self._on_transcription_complete = on_transcription_complete
         self._on_error = on_error
+        self._on_transcription_update = on_transcription_update
         self._language = language
         
         # Reset state
@@ -254,6 +260,13 @@ class TranscriptionStreamProcessor:
             )
             
             logger.info(f"Transcription complete: {len(transcript.text)} characters")
+            
+            # Update callback with full transcript text
+            if self._on_transcription_update:
+                try:
+                    self._on_transcription_update(self._transcript_id, transcript.text)
+                except Exception as cb_err:
+                    logger.error(f"on_transcription_update callback error: {cb_err}")
             
             # Call completion callback
             if self._on_transcription_complete:

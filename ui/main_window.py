@@ -563,7 +563,7 @@ class MainWindow(QMainWindow):
             return
         
         # Update UI
-        self.transcript_status.setText(f"Transcription complete ({len(transcript.segments)} segments)")
+        self.transcript_status.setText(f"Transcription complete")
         self.status_label.setText("Transcription complete")
         self.progress_bar.setVisible(False)
         
