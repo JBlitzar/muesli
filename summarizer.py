@@ -99,7 +99,7 @@ class TranscriptSummarizer:
         """
         # Extract raw text from the transcript input
         transcript_text = (
-            transcript.text if isinstance(transcript, Transcript) else str(transcript)
+            transcript.text if hasattr(transcript, "text") else str(transcript)
         )
         
         # Check if transcript is empty

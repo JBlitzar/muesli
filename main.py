@@ -122,7 +122,7 @@ class LLMConfig(BaseModel):
     )
     
     model_name: str = Field(
-        default="llama3:8b-instruct",
+        default="llama3.2",
         description="Model name to use with the provider"
     )
     

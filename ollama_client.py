@@ -24,7 +24,7 @@ class OllamaClient:
     def __init__(
         self,
         base_url: str = "http://localhost:11434",  # Kept for API compatibility
-        model_name: str = "llama3:8b-instruct",
+        model_name: str = "llama3.2",
         offline_mode: bool = True,
     ):
         """
@@ -100,19 +100,11 @@ class OllamaClient:
         # Add model name
         cmd.append(self.model_name)
         
-        # Add parameters
-        if system_prompt:
-            cmd.extend(["--system", system_prompt])
+        QUOTE = "\""
         
-        cmd.extend(["--temperature", str(temperature)])
-        cmd.extend(["--num-predict", str(max_tokens)])
-        
-        # Add offline mode if enabled
-        if self.offline_mode:
-            cmd.append("--nowordwrap")  # Prevent word wrapping in output
-        
-        # Add the prompt (must be last argument)
-        cmd.append(prompt)
+        cmd.append(QUOTE + system_prompt + "; Transcript: " + prompt + QUOTE)
+        print(" ".join(cmd))
+        print("command ^^^")
         
         logger.debug(f"Executing command: {' '.join(cmd)}")
         

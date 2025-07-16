@@ -27,7 +27,7 @@ muesli/
 ├── models.py          # Pydantic data models (AudioFile, Transcript, Summary…)
 ├── whisper_wrapper.py # Thin subprocess wrapper around whisper.cpp
 ├── stream_processor.py# Microphone capture & streaming transcription
-├── ollama_client.py   # Minimal HTTP client for local Ollama server
+├── ollama_client.py   # Subprocess wrapper around the Ollama CLI
 ├── summarizer.py      # Generates summaries with the LLM client
 └── ui/
     ├── main_window.py # PySide6 main window (widgets)
@@ -49,7 +49,7 @@ No databases, message queues or complex dependency-injection frameworks – the 
 | Ollama (optional)      | Local LLM for summaries          |
 | **Poetry**             | Dependency management (optional) |
 
-Python deps are listed in `pyproject.toml` – main ones are **PySide6**, **pydantic**, **httpx**, **PyAudio**, **numpy**.
+Python deps are listed in `pyproject.toml` – main ones are **PySide6**, **pydantic**, **PyAudio**, **numpy**.
 
 ---
 
@@ -155,7 +155,7 @@ Place it in:
 | -------------------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
 | **WhisperTranscriber** (`whisper_wrapper.py`)            | Spawns whisper.cpp via `subprocess`, streams progress, verifies model checksum.                          |
 | **TranscriptionStreamProcessor** (`stream_processor.py`) | Captures microphone audio with PyAudio, performs VAD, chunks audio into ~5 s segments, feeds to Whisper. |
-| **OllamaClient** (`ollama_client.py`)                    | Thin HTTPX wrapper around `/api/generate`, supports streaming responses.                                 |
+| **OllamaClient** (`ollama_client.py`)                    | Thin subprocess wrapper around the `ollama run` CLI (no HTTP), supports streaming responses.             |
 | **TranscriptSummarizer** (`summarizer.py`)               | Builds prompt templates and calls `OllamaClient` to get summary.                                         |
 | **MuesliApp** (`main.py`)                                | Loads config, sets up components, exposes Qt signals for UI.                                             |
 | **UI** (`ui/`)                                           | PySide6 widgets + optional QML; auto-updates via Qt signals.                                             |
