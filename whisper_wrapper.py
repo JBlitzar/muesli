@@ -608,8 +608,7 @@ class WhisperTranscriber:
         # Create a temporary directory for output files
         with tempfile.TemporaryDirectory() as temp_dir:
             temp_dir_path = Path(temp_dir)
-            json_output_path = temp_dir_path / "transcript.json"
-            txt_output_path = temp_dir_path / "transcript.txt"
+            json_output_path = temp_dir_path / "transcript"
             
             try:
                 # Build command
@@ -617,10 +616,8 @@ class WhisperTranscriber:
                     self.whisper_binary,
                     "--model", str(self._model_path),
                     "--language", language,
-                    "--output-json", str(json_output_path),
-                    "--output-txt", "true",
-                    "--output-dir", str(temp_dir_path),
-                    "--output-srt", "false",
+                    "--output-json", "true",
+                    "--output-file", str(json_output_path),
                     "--print-progress", "true",
                     "--beam-size", str(self.beam_size),
                     str(audio_path)
@@ -683,12 +680,12 @@ class WhisperTranscriber:
                     progress_callback(0.9, "Processing results...")
                 
                 # Try to parse JSON output
-                segments = self._parse_json_output(json_output_path)
+                segments = self._parse_json_output(json_output_path.with_suffix('.json'))
                 
-                # If JSON parsing failed, try to parse text output as fallback
-                if not segments and txt_output_path.exists():
-                    logger.info("JSON parsing failed, falling back to text output")
-                    segments = self._parse_text_output(txt_output_path)
+                # # If JSON parsing failed, try to parse text output as fallback
+                # if not segments and txt_output_path.exists():
+                #     logger.info("JSON parsing failed, falling back to text output")
+                #     segments = self._parse_text_output(txt_output_path)
                 
                 # If we still don't have segments, try to parse stdout directly
                 if not segments:
