@@ -29,6 +29,12 @@ from models import Transcript, Summary, AudioFile
 
 logger = logging.getLogger(__name__)
 
+# Color scheme constants
+ACCENT_COLOR = "#e8e8e8"  # (232, 232, 232) - Main accent color
+BACKGROUND_COLOR = "#fcfbf6"  # Main background
+BORDER_COLOR = "#e3e6d6"  # Border color
+TEXT_COLOR = "#333333"  # Primary text color
+SECONDARY_TEXT_COLOR = "#7f8c8d"  # Secondary text color
 
 class MainWindow(QMainWindow):
     """
@@ -60,10 +66,10 @@ class MainWindow(QMainWindow):
         self.resize(1024, 768)
         
         # Set window background color
-        self.setStyleSheet("""
-            QMainWindow {
-                background-color: #fcfbf6;
-            }
+        self.setStyleSheet(f"""
+            QMainWindow {{
+                background-color: {BACKGROUND_COLOR};
+            }}
         """)
         
         # Active transcripts and summaries
@@ -86,10 +92,10 @@ class MainWindow(QMainWindow):
         """Set up the UI components."""
         # Create central widget
         central_widget = QWidget()
-        central_widget.setStyleSheet("""
-            QWidget {
-                background-color: #fcfbf6;
-            }
+        central_widget.setStyleSheet(f"""
+            QWidget {{
+                background-color: {BACKGROUND_COLOR};
+            }}
         """)
         self.setCentralWidget(central_widget)
         
@@ -112,15 +118,15 @@ class MainWindow(QMainWindow):
         header_font = QFont("Geist Mono", 14, QFont.Bold)
         header_font.setStyleHint(QFont.SansSerif)
         header_label.setFont(header_font)
-        header_label.setStyleSheet("color: #333333;")
+        header_label.setStyleSheet(f"color: {TEXT_COLOR};")
         header_layout.addWidget(header_label)
 
         self.transcript_status = QLabel("No transcript loaded")
-        self.transcript_status.setStyleSheet("color: #7f8c8d;")
+        self.transcript_status.setStyleSheet(f"color: {SECONDARY_TEXT_COLOR};")
         header_layout.addWidget(self.transcript_status)
 
         self.summary_status = QLabel("No summary generated")
-        self.summary_status.setStyleSheet("color: #7f8c8d;")
+        self.summary_status.setStyleSheet(f"color: {SECONDARY_TEXT_COLOR};")
         header_layout.addWidget(self.summary_status)
         header_layout.addStretch()
 
@@ -140,37 +146,37 @@ class MainWindow(QMainWindow):
         self.combined_text.setWordWrapMode(QTextOption.WrapAtWordBoundaryOrAnywhere)
         
         # Add styling with padding, rounded corners, and background
-        self.combined_text.setStyleSheet("""
-            QTextEdit {
-                background-color: #fcfbf6;
-                border: 1px solid #e6e3d6;
+        self.combined_text.setStyleSheet(f"""
+            QTextEdit {{
+                background-color: {BACKGROUND_COLOR};
+                border: 1px solid {BORDER_COLOR};
                 border-radius: 12px;
                 padding: 24px;
-                color: #333333;
+                color: {TEXT_COLOR};
                 selection-background-color: #3498db;
                 selection-color: white;
-            }
-            QScrollBar:vertical {
+            }}
+            QScrollBar:vertical {{
                 background-color: #f0ede3;
                 border: none;
                 border-radius: 6px;
                 width: 12px;
                 margin: 0;
-            }
-            QScrollBar::handle:vertical {
-                background-color: #e8e8e8;
+            }}
+            QScrollBar::handle:vertical {{
+                background-color: {ACCENT_COLOR};
                 border-radius: 6px;
                 min-height: 20px;
-            }
-            QScrollBar::handle:vertical:hover {
+            }}
+            QScrollBar::handle:vertical:hover {{
                 background-color: #c7c2b4;
-            }
-            QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {
+            }}
+            QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{
                 height: 0px;
-            }
-            QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {
+            }}
+            QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {{
                 background: none;
-            }
+            }}
         """)
         
         self.combined_text.setPlaceholderText(
@@ -179,12 +185,12 @@ class MainWindow(QMainWindow):
         
         # Create a container widget for the text area to add outer padding/styling
         text_container = QWidget()
-        text_container.setStyleSheet("""
-            QWidget {
-                background-color: #fcfbf6;
-                border: 1px solid #e6e3d6;
+        text_container.setStyleSheet(f"""
+            QWidget {{
+                background-color: {BACKGROUND_COLOR};
+                border: 1px solid {BORDER_COLOR};
                 border-radius: 12px;
-            }
+            }}
         """)
         
         text_layout = QVBoxLayout(text_container)
@@ -198,30 +204,30 @@ class MainWindow(QMainWindow):
         
         # Create status bar
         self.status_bar = QStatusBar()
-        self.status_bar.setStyleSheet("""
-            QStatusBar {
-                background-color: #e8e8e8;
+        self.status_bar.setStyleSheet(f"""
+            QStatusBar {{
+                background-color: {ACCENT_COLOR};
                 color: white;
                 border: none;
                 padding: 12px 16px;
                 margin: 0px;
                 min-height: 20px;
-            }
-            QStatusBar QLabel {
-                color: white;
+            }}
+            QStatusBar QLabel {{
+                color: black;
                 padding-left: 8px;
                 background: transparent;
-            }
-            QStatusBar QProgressBar {
+            }}
+            QStatusBar QProgressBar {{
                 background-color: rgba(211, 219, 230, 0.3);
                 border: none;
                 height: 20px;
-            }
+            }}
         """)
         self.setStatusBar(self.status_bar)
         
         self.status_label = QLabel("Ready")
-        self.status_label.setStyleSheet("color: white; font-family: 'Geist Mono', sans-serif;")
+        self.status_label.setStyleSheet("color: black; font-family: 'Geist Mono', sans-serif;")
         self.status_bar.addWidget(self.status_label, 1)
         
         self.progress_bar = QProgressBar()
@@ -279,31 +285,31 @@ class MainWindow(QMainWindow):
     def _create_menu_bar(self):
         """Create the menu bar."""
         menu_bar = self.menuBar()
-        menu_bar.setStyleSheet("""
-            QMenuBar {
-                background-color: #fcfbf6;
-                color: #333333;
+        menu_bar.setStyleSheet(f"""
+            QMenuBar {{
+                background-color: {BACKGROUND_COLOR};
+                color: {TEXT_COLOR};
                 border: none;
                 padding: 4px;
-            }
-            QMenuBar::item {
+            }}
+            QMenuBar::item {{
                 background-color: transparent;
                 padding: 8px 12px;
-            }
-            QMenuBar::item:selected {
-                background-color: #e6e3d6;
-            }
-            QMenu {
-                background-color: #fcfbf6;
-                border: 1px solid #e6e3d6;
+            }}
+            QMenuBar::item:selected {{
+                background-color: {BORDER_COLOR};
+            }}
+            QMenu {{
+                background-color: {BACKGROUND_COLOR};
+                border: 1px solid {BORDER_COLOR};
                 padding: 4px;
-            }
-            QMenu::item {
+            }}
+            QMenu::item {{
                 padding: 8px 16px;
-            }
-            QMenu::item:selected {
-                background-color: #e6e3d6;
-            }
+            }}
+            QMenu::item:selected {{
+                background-color: {BORDER_COLOR};
+            }}
         """)
         
         # File menu
@@ -357,43 +363,43 @@ class MainWindow(QMainWindow):
     def _create_toolbar(self):
         """Create the toolbar."""
         toolbar = QToolBar("Main Toolbar")
-        toolbar.setStyleSheet("""
-            QToolBar {
-                background-color: #d3dbe6;
+        toolbar.setStyleSheet(f"""
+            QToolBar {{
+                background-color: {ACCENT_COLOR};
                 border: none;
                 padding: 12px 16px;
                 spacing: 8px;
                 margin: 0px 0px 8px 0px;
                 min-height: 44px;
-            }
-            QToolBar QToolButton {
-                background-color: #fcfbf6;
-                color: #333333;
-                border: 1px solid #e6e3d6;
+            }}
+            QToolBar QToolButton {{
+                background-color: {BACKGROUND_COLOR};
+                color: {TEXT_COLOR};
+                border: 1px solid {BORDER_COLOR};
                 padding: 8px 16px;
                 margin: 2px;
                 font-family: 'Geist Mono', sans-serif;
                 font-size: 14px;
                 min-height: 20px;
                 border-radius: 6px;
-            }
-            QToolBar QToolButton:hover {
+            }}
+            QToolBar QToolButton:hover {{
                 background-color: #f0ede3;
                 border-color: #d4d0c4;
-            }
-            QToolBar QToolButton:pressed {
-                background-color: #e6e3d6;
-            }
-            QToolBar QToolButton:disabled {
+            }}
+            QToolBar QToolButton:pressed {{
+                background-color: {BORDER_COLOR};
+            }}
+            QToolBar QToolButton:disabled {{
                 background-color: #f5f4f1;
                 color: #a0a0a0;
-                border-color: #e6e3d6;
-            }
-            QToolBar::separator {
+                border-color: {BORDER_COLOR};
+            }}
+            QToolBar::separator {{
                 background-color: rgba(255, 255, 255, 0.2);
                 width: 1px;
                 margin: 4px 8px;
-            }
+            }}
         """)
         
         # Set toolbar to be movable and set proper size policy
