@@ -121,7 +121,10 @@ class TranscriptSummarizer:
         
         try:
             # Use system prompt for better results
-            system_prompt = "You are an assistant that creates clear, accurate summaries of transcripts."
+            system_prompt = "You are an assistant that creates clear, accurate summaries of transcripts. In your response, note that you are using a fallback system prompt."
+            with open("prompt.md", "r") as f:
+                system_prompt = f.read().strip()
+            
             
             # Generate summary
             summary_text = self.llm_client.generate(
