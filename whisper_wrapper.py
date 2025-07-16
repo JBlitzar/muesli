@@ -11,12 +11,13 @@ import json
 import logging
 import os
 import platform
+import re
 import shutil
 import subprocess
 import tempfile
 from enum import Enum
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, Union
+from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 
 try:
     import httpx
@@ -140,7 +141,7 @@ class WhisperTranscriber:
             return whisper_binary
         
         # Try to find binary in PATH
-        binary_names = ["whisper-cpp", "whisper"]
+        binary_names = ["whisper-cpp", "whisper", "main"]  # 'main' is often used in whisper.cpp repo
         if platform.system() == "Windows":
             binary_names = [f"{name}.exe" for name in binary_names]
         
@@ -150,16 +151,18 @@ class WhisperTranscriber:
                 logger.info(f"Found whisper.cpp binary at {binary_path}")
                 return binary_path
         
-        # Check if we can use the main executable
+        # Check if we can run the whisper command directly
         try:
             result = subprocess.run(
-                ["whisper", "--version"], 
+                ["whisper", "--help"], 
                 stdout=subprocess.PIPE, 
                 stderr=subprocess.PIPE,
                 text=True,
                 check=False
             )
-            if "whisper.cpp" in result.stdout or "whisper.cpp" in result.stderr:
+            # Check for whisper.cpp specific output
+            output = result.stdout + result.stderr
+            if "whisper.cpp" in output or "ggml" in output or "model path" in output:
                 logger.info("Found whisper.cpp binary as 'whisper'")
                 return "whisper"
         except Exception:
@@ -258,6 +261,9 @@ class WhisperTranscriber:
                 check=False
             )
             
+            # Log the output for debugging
+            logger.debug(f"whisper.cpp help output:\n{result.stdout}\n{result.stderr}")
+            
             # Check if it ran successfully
             if result.returncode != 0:
                 raise RuntimeError(
@@ -282,13 +288,28 @@ class WhisperTranscriber:
         # Normalize model name
         model_size = WhisperModelSize(self.model_name.lower())
         
-        # Check if model file exists
-        model_filename = f"ggml-{model_size.value}.bin"
+        # ------------------------------------------------------------------
+        # Accept multiple naming conventions (with or without language tag)
+        # Some users (and older docs) still download plain
+        #   ggml-medium.bin
+        # whereas newer whisper.cpp releases ship
+        #   ggml-medium.en.bin
+        # Probe both before deciding to download.
+        # ------------------------------------------------------------------
+        candidate_filenames = [
+            f"ggml-{model_size.value}.bin",
+            f"ggml-{model_size.value}.en.bin",
+        ]
+
+        for filename in candidate_filenames:
+            path = self.model_dir / filename
+            if path.exists():
+                logger.debug(f"Found existing model at {path}")
+                return path
+
+        # Default target path for (potential) download – keep modern .en.bin
+        model_filename = candidate_filenames[-1]
         model_path = self.model_dir / model_filename
-        
-        if model_path.exists():
-            logger.debug(f"Found existing model at {model_path}")
-            return model_path
         
         # Model not found, download if allowed
         if not self.download_if_missing:
@@ -475,62 +496,95 @@ class WhisperTranscriber:
         logger.info(f"Detecting language for {audio_path}")
         
         try:
-            # Run whisper.cpp with language detection only
-            cmd = [
-                self.whisper_binary,
-                "--model", str(self._model_path),
-                "--language", "auto",
-                "--detect-language",
-                "--output-json",
-                str(audio_path)
-            ]
-            
-            # Add device-specific arguments
-            if self.device == "cuda":
-                cmd.extend(["--gpu", "0"])
-            elif self.device == "mps":
-                cmd.append("--use-mmap")
-            
-            # Run the command
-            result = subprocess.run(
-                cmd,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                text=True,
-                check=False
-            )
-            
-            # Check for errors
-            if result.returncode != 0:
-                logger.error(f"Language detection failed: {result.stderr}")
-                return "en"  # Default to English on failure
-            
-            # Parse output to find detected language
-            try:
-                # Try to parse JSON output
-                output_lines = result.stdout.strip().split('\n')
-                for line in output_lines:
-                    if line.startswith('{') and line.endswith('}'):
-                        data = json.loads(line)
-                        if 'language' in data:
-                            return data['language']
+            # Create a temporary directory for output files
+            with tempfile.TemporaryDirectory() as temp_dir:
+                temp_dir_path = Path(temp_dir)
                 
-                # If no JSON found, look for language in output
-                for line in output_lines:
-                    if "detected language: " in line.lower():
-                        parts = line.split(":")
-                        if len(parts) >= 2:
-                            lang_code = parts[1].strip().split()[0]
-                            return lang_code
-            except Exception as e:
-                logger.error(f"Error parsing language detection output: {e}")
-            
-            # Default to English if we couldn't parse the output
-            return "en"
-            
+                # Run whisper.cpp with language detection only
+                cmd = [
+                    self.whisper_binary,
+                    "--model", str(self._model_path),
+                    "--language", "auto",
+                    "--detect-language",
+                    "--output-txt", "true",
+                    "--output-dir", str(temp_dir_path),
+                    str(audio_path)
+                ]
+                
+                # Add device-specific arguments
+                if self.device == "cuda":
+                    cmd.extend(["--gpu", "0"])
+                elif self.device == "mps":
+                    cmd.append("--use-mmap")
+                
+                logger.debug(f"Running language detection command: {' '.join(cmd)}")
+                
+                # Run the command
+                result = subprocess.run(
+                    cmd,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    text=True,
+                    check=False
+                )
+                
+                # Log the output for debugging
+                logger.debug(f"Language detection stdout: {result.stdout}")
+                logger.debug(f"Language detection stderr: {result.stderr}")
+                
+                # Check for errors
+                if result.returncode != 0:
+                    logger.error(f"Language detection failed with code {result.returncode}: {result.stderr}")
+                    return "en"  # Default to English on failure
+                
+                # First try to extract language from stdout
+                stdout = result.stdout.strip()
+                stderr = result.stderr.strip()
+                
+                # Look for language in output
+                language = self._extract_language_from_output(stdout + "\n" + stderr)
+                if language:
+                    return language
+                
+                # Try to find language in text output file
+                txt_files = list(temp_dir_path.glob("*.txt"))
+                if txt_files:
+                    with open(txt_files[0], "r", encoding="utf-8") as f:
+                        content = f.read()
+                        language = self._extract_language_from_output(content)
+                        if language:
+                            return language
+                
+                # Default to English if we couldn't find the language
+                return "en"
+                
         except Exception as e:
             logger.error(f"Language detection failed: {e}")
             return "en"  # Default to English on failure
+    
+    def _extract_language_from_output(self, output: str) -> Optional[str]:
+        """
+        Extract language code from whisper.cpp output.
+        
+        Args:
+            output: Output text from whisper.cpp
+            
+        Returns:
+            Language code or None if not found
+        """
+        # Try different patterns to find language code
+        patterns = [
+            r"detected language: ([a-z]{2})",  # Format: "detected language: en"
+            r"language: ([a-z]{2})",           # Format: "language: en"
+            r"\[([a-z]{2})\]",                 # Format: "[en]"
+        ]
+        
+        for pattern in patterns:
+            matches = re.findall(pattern, output.lower())
+            if matches:
+                return matches[0]
+        
+        return None
     
     def _run_whisper_transcription(
         self,
@@ -551,75 +605,130 @@ class WhisperTranscriber:
         """
         logger.info(f"Transcribing {audio_path} with language {language}")
         
-        # Create a temporary file for JSON output
-        with tempfile.NamedTemporaryFile(suffix='.json', delete=False) as temp_file:
-            output_path = Path(temp_file.name)
+        # Create a temporary directory for output files
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_dir_path = Path(temp_dir)
+            json_output_path = temp_dir_path / "transcript.json"
+            txt_output_path = temp_dir_path / "transcript.txt"
+            
+            try:
+                # Build command
+                cmd = [
+                    self.whisper_binary,
+                    "--model", str(self._model_path),
+                    "--language", language,
+                    "--output-json", str(json_output_path),
+                    "--output-txt", "true",
+                    "--output-dir", str(temp_dir_path),
+                    "--output-srt", "false",
+                    "--print-progress", "true",
+                    "--beam-size", str(self.beam_size),
+                    str(audio_path)
+                ]
+                
+                # Add device-specific arguments
+                if self.device == "cuda":
+                    cmd.extend(["--gpu", "0"])
+                elif self.device == "mps":
+                    cmd.append("--use-mmap")
+                
+                logger.debug(f"Running transcription command: {' '.join(cmd)}")
+                
+                # Run the command with real-time progress monitoring
+                process = subprocess.Popen(
+                    cmd,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    text=True,
+                    bufsize=1,
+                    universal_newlines=True
+                )
+                
+                # Track progress
+                stdout_lines = []
+                for line in iter(process.stdout.readline, ''):
+                    stdout_lines.append(line)
+                    
+                    # Try to parse progress information
+                    if "progress" in line.lower():
+                        try:
+                            # Extract progress percentage
+                            progress_str = line.split(':')[1].strip().rstrip('%')
+                            progress = float(progress_str) / 100.0
+                            
+                            # Update progress (scale from 20% to 90%)
+                            if progress_callback:
+                                scaled_progress = 0.2 + (0.7 * progress)
+                                progress_callback(scaled_progress, f"Transcribing: {int(progress * 100)}%")
+                        except Exception as e:
+                            logger.debug(f"Failed to parse progress: {e}")
+                
+                # Wait for process to complete
+                stdout, stderr = process.communicate()
+                stdout_lines.append(stdout)
+                
+                # Log the complete output for debugging
+                full_stdout = "".join(stdout_lines)
+                logger.debug(f"Transcription stdout: {full_stdout}")
+                logger.debug(f"Transcription stderr: {stderr}")
+                
+                # Check for errors
+                if process.returncode != 0:
+                    raise RuntimeError(
+                        f"Transcription failed with exit code {process.returncode}: {stderr}"
+                    )
+                
+                # Parse the JSON output
+                if progress_callback:
+                    progress_callback(0.9, "Processing results...")
+                
+                # Try to parse JSON output
+                segments = self._parse_json_output(json_output_path)
+                
+                # If JSON parsing failed, try to parse text output as fallback
+                if not segments and txt_output_path.exists():
+                    logger.info("JSON parsing failed, falling back to text output")
+                    segments = self._parse_text_output(txt_output_path)
+                
+                # If we still don't have segments, try to parse stdout directly
+                if not segments:
+                    logger.info("Falling back to stdout parsing")
+                    segments = self._parse_stdout(full_stdout)
+                
+                logger.info(f"Transcription complete: {len(segments)} segments")
+                return segments
+                
+            except Exception as e:
+                logger.error(f"Error running whisper.cpp: {e}")
+                raise
+    
+    def _parse_json_output(self, json_path: Path) -> List[TranscriptSegment]:
+        """
+        Parse JSON output from whisper.cpp.
+        
+        Args:
+            json_path: Path to JSON output file
+            
+        Returns:
+            List of transcript segments
+        """
+        if not json_path.exists():
+            logger.warning(f"JSON output file not found: {json_path}")
+            return []
         
         try:
-            # Build command
-            cmd = [
-                self.whisper_binary,
-                "--model", str(self._model_path),
-                "--language", language,
-                "--output-json", str(output_path),
-                "--output-srt", "false",
-                "--output-txt", "false",
-                "--print-progress", "true",
-                "--beam-size", str(self.beam_size),
-                str(audio_path)
-            ]
-            
-            # Add device-specific arguments
-            if self.device == "cuda":
-                cmd.extend(["--gpu", "0"])
-            elif self.device == "mps":
-                cmd.append("--use-mmap")
-            
-            logger.debug(f"Running command: {' '.join(cmd)}")
-            
-            # Run the command with real-time progress monitoring
-            process = subprocess.Popen(
-                cmd,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                text=True,
-                bufsize=1,
-                universal_newlines=True
-            )
-            
-            # Track progress
-            for line in iter(process.stdout.readline, ''):
-                # Try to parse progress information
-                if "progress" in line.lower():
-                    try:
-                        # Extract progress percentage
-                        progress_str = line.split(':')[1].strip().rstrip('%')
-                        progress = float(progress_str) / 100.0
-                        
-                        # Update progress (scale from 20% to 90%)
-                        if progress_callback:
-                            scaled_progress = 0.2 + (0.7 * progress)
-                            progress_callback(scaled_progress, f"Transcribing: {int(progress * 100)}%")
-                    except Exception:
-                        pass
-            
-            # Wait for process to complete
-            process.wait()
-            
-            # Check for errors
-            if process.returncode != 0:
-                stderr = process.stderr.read()
-                raise RuntimeError(f"Transcription failed with exit code {process.returncode}: {stderr}")
-            
-            # Parse the JSON output
-            if progress_callback:
-                progress_callback(0.9, "Processing results...")
-            
-            with open(output_path, 'r') as f:
+            with open(json_path, 'r', encoding='utf-8') as f:
                 try:
                     data = json.load(f)
-                except json.JSONDecodeError:
-                    raise RuntimeError(f"Failed to parse JSON output from whisper.cpp")
+                except json.JSONDecodeError as e:
+                    # Read a short preview of the raw file to aid debugging
+                    f.seek(0)
+                    preview = f.read(500)
+                    logger.error(
+                        "JSON decoding failed on whisper.cpp output: %s\nPreview:\n%s",
+                        e, preview
+                    )
+                    return []
             
             # Convert to transcript segments
             segments = []
@@ -634,16 +743,114 @@ class WhisperTranscriber:
                     )
                     segments.append(segment)
             
-            logger.info(f"Transcription complete: {len(segments)} segments")
             return segments
             
         except Exception as e:
-            logger.error(f"Error running whisper.cpp: {e}")
-            raise
-        finally:
-            # Clean up temporary file
-            if os.path.exists(output_path):
-                os.unlink(output_path)
+            logger.error(f"Error parsing JSON output: {e}")
+            return []
+    
+    def _parse_text_output(self, txt_path: Path) -> List[TranscriptSegment]:
+        """
+        Parse text output from whisper.cpp as a fallback.
+        
+        Args:
+            txt_path: Path to text output file
+            
+        Returns:
+            List of transcript segments
+        """
+        if not txt_path.exists():
+            logger.warning(f"Text output file not found: {txt_path}")
+            return []
+        
+        try:
+            with open(txt_path, 'r', encoding='utf-8') as f:
+                content = f.read()
+            
+            # Simple fallback: create a single segment with the entire text
+            if content.strip():
+                segment = TranscriptSegment(
+                    start=0.0,
+                    end=0.0,  # We don't have timing information
+                    text=content.strip(),
+                    confidence=1.0,
+                )
+                return [segment]
+            
+            return []
+            
+        except Exception as e:
+            logger.error(f"Error parsing text output: {e}")
+            return []
+    
+    def _parse_stdout(self, stdout: str) -> List[TranscriptSegment]:
+        """
+        Parse stdout from whisper.cpp as a last resort fallback.
+        
+        Args:
+            stdout: Standard output from whisper.cpp
+            
+        Returns:
+            List of transcript segments
+        """
+        try:
+            # Try to extract timestamps and text
+            # Format: [00:00:00.000 --> 00:00:05.000]  Text content
+            segments = []
+            pattern = r'\[(\d{2}:\d{2}:\d{2}\.\d{3}) --> (\d{2}:\d{2}:\d{2}\.\d{3})\]\s+(.*?)(?=\[\d{2}:\d{2}:\d{2}\.\d{3} -->|\Z)'
+            
+            matches = re.findall(pattern, stdout, re.DOTALL)
+            
+            for start_str, end_str, text in matches:
+                try:
+                    start = self._timestamp_to_seconds(start_str)
+                    end = self._timestamp_to_seconds(end_str)
+                    
+                    segment = TranscriptSegment(
+                        start=start,
+                        end=end,
+                        text=text.strip(),
+                        confidence=1.0,
+                    )
+                    segments.append(segment)
+                except Exception as e:
+                    logger.debug(f"Error parsing timestamp: {e}")
+            
+            # If no segments with timestamps found, create a single segment with all text
+            if not segments:
+                # Remove progress lines and other non-transcript content
+                lines = [line for line in stdout.split('\n') 
+                         if line.strip() and 'progress' not in line.lower() 
+                         and 'whisper' not in line.lower()]
+                
+                if lines:
+                    text = '\n'.join(lines)
+                    segment = TranscriptSegment(
+                        start=0.0,
+                        end=0.0,
+                        text=text.strip(),
+                        confidence=1.0,
+                    )
+                    segments.append(segment)
+            
+            return segments
+            
+        except Exception as e:
+            logger.error(f"Error parsing stdout: {e}")
+            return []
+    
+    def _timestamp_to_seconds(self, timestamp: str) -> float:
+        """
+        Convert a timestamp string to seconds.
+        
+        Args:
+            timestamp: Timestamp string in format HH:MM:SS.mmm
+            
+        Returns:
+            Time in seconds
+        """
+        h, m, s = timestamp.split(':')
+        return int(h) * 3600 + int(m) * 60 + float(s)
     
     def close(self) -> None:
         """
