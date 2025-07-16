@@ -6,7 +6,9 @@ authors = ["Your Name <your.email@example.com>"]
 readme = "README.md"
 license = "MIT"
 repository = "https://github.com/JBlitzar/muesli"
-packages = [{include = "muesli"}]
+# project is now a flat layout (top-level modules + “ui” package)
+# explicitly include the UI package so Poetry has at least one package to ship
+packages = [{ include = "ui" }]
 
 [tool.poetry.dependencies]
 python = "^3.8"
@@ -33,7 +35,7 @@ requires = ["poetry-core"]
 build-backend = "poetry.core.masonry.api"
 
 [tool.poetry.scripts]
-muesli = "muesli.main:main"
+muesli = "main:main"
 
 [tool.black]
 line-length = 88
