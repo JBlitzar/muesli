@@ -9,13 +9,13 @@ Offline-first, privacy-centric voice **transcription** and **summarisation** des
 
 ## Features
 
-- 🎙️ Real-time microphone transcription with optional VAD  
-- 📂 Drag-and-drop or “Open File” transcription for WAV / MP3 / M4A / FLAC / OGG  
-- 🧠 Local LLM summarisation (bullet-points, paragraph, executive etc.)  
-- 💾 Save transcript as **.txt** or **.srt**, save summary as **.txt**  
-- 🌗 Dark / Light / System theme  
-- 💻 Runs completely offline – network calls can be disabled in `config.yml`  
-- 🪄 Single-executable build possible via `pyinstaller`  
+- 🎙️ Real-time microphone transcription with optional VAD
+- 📂 Drag-and-drop or “Open File” transcription for WAV / MP3 / M4A / FLAC / OGG
+- 🧠 Local LLM summarisation (bullet-points, paragraph, executive etc.)
+- 💾 Save transcript as **.txt** or **.srt**, save summary as **.txt**
+- 🌗 Dark / Light / System theme
+- 💻 Runs completely offline – network calls can be disabled in `config.yml`
+- 🪄 Single-executable build possible via `pyinstaller`
 
 ---
 
@@ -78,8 +78,8 @@ cd whisper.cpp && make
 `Muesli` will auto-download the GGML model you choose (default **medium**).  
 You can also drop a file such as:
 
-* `ggml-medium.bin` **or**  
-* `ggml-medium.en.bin`  
+- `ggml-medium.bin` **or**
+- `ggml-medium.en.bin`
 
 into `~/.muesli/models/whisper/` – the wrapper looks for both names.
 
@@ -104,9 +104,9 @@ python -m muesli --transcribe path/to/audio.wav  # CLI mode, prints transcript
 
 ### Graphical UI
 
-1. Start `muesli` (double-click or `python -m muesli`)  
-2. Click **Open File** _or_ **Record**  
-3. Watch live transcript appear; press **Summarize** to run LLM  
+1. Start `muesli` (double-click or `python -m muesli`)
+2. Click **Open File** _or_ **Record**
+3. Watch live transcript appear; press **Summarize** to run LLM
 4. Save results via **File → Save Transcript / Save Summary**
 
 ### Command-line shortcuts
@@ -144,8 +144,8 @@ ui:
 
 Place it in:
 
-- `./muesli.yml` (project root)  
-- `~/.muesli/config.yml` (user)  
+- `./muesli.yml` (project root)
+- `~/.muesli/config.yml` (user)
 
 ---
 
@@ -176,13 +176,13 @@ poetry run pytest -q     # tests (minimal)
 
 ## Troubleshooting
 
-| Symptom / Log message                                         | Possible cause & fix                                                                                                                       |
-| ------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
-| `whisper.cpp binary not found`                                | Ensure you compiled the binary (`make`) and that `whisper`, `whisper-cpp`, or `main` is in your `$PATH`, **or** provide `--whisper-binary`. |
-| `Model file not found…`                                       | Place **either** `ggml-medium.bin` **or** `ggml-medium.en.bin` in `~/.muesli/models/whisper/`, or allow auto-download (default).            |
-| `Failed to parse JSON output from whisper.cpp`                | Older builds don’t support `--output-json`. Re-compile latest `whisper.cpp` (`git pull && make`) **or** let Muesli fall back to TXT parse. |
-| Silence / no transcription                                    | Verify your input device using `pyaudio` list in Python or system preferences; disable VAD in config to test.                             |
-| `ffmpeg` errors decoding files                                | Install `ffmpeg` and ensure it’s on PATH; or convert the audio to WAV manually.                                                            |
+| Symptom / Log message                          | Possible cause & fix                                                                                                                        |
+| ---------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| `whisper.cpp binary not found`                 | Ensure you compiled the binary (`make`) and that `whisper`, `whisper-cpp`, or `main` is in your `$PATH`, **or** provide `--whisper-binary`. |
+| `Model file not found…`                        | Place **either** `ggml-medium.bin` **or** `ggml-medium.en.bin` in `~/.muesli/models/whisper/`, or allow auto-download (default).            |
+| `Failed to parse JSON output from whisper.cpp` | Older builds don’t support `--output-json`. Re-compile latest `whisper.cpp` (`git pull && make`) **or** let Muesli fall back to TXT parse.  |
+| Silence / no transcription                     | Verify your input device using `pyaudio` list in Python or system preferences; disable VAD in config to test.                               |
+| `ffmpeg` errors decoding files                 | Install `ffmpeg` and ensure it’s on PATH; or convert the audio to WAV manually.                                                             |
 
 ### whisper.cpp CLI cheat-sheet
 
@@ -202,15 +202,15 @@ Muesli internally generates a similar command; use it as a reference when debugg
 
 ## Roadmap
 
-- Speaker diarisation  
-- Multi-file batch mode  
-- Electron-free mobile build via Qt-for-Android/iOS  
+- Speaker diarisation
+- Multi-file batch mode
+- Electron-free mobile build via Qt-for-Android/iOS
 
 ---
 
 ## License
 
-The source code is released under the **MIT License**.  
+The source code is released under the **GNU GPLv3 License**.  
 Whisper model weights are distributed under their respective licenses (MIT for GGML binaries).  
 “Whisper” and “GPT” are trademarks of their respective owners.
 

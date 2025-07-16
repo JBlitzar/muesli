@@ -8,7 +8,7 @@ including audio files, transcripts, and summaries.
 import datetime
 import enum
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, Optional, Union
 
 from pydantic import BaseModel, Field, field_validator, model_validator, ConfigDict
 
@@ -108,36 +108,6 @@ class AudioFile(BaseModel):
         return self.path.exists() or str(self.path) == "stream"
 
 
-class TranscriptSegment(BaseModel):
-    """A segment of a transcript with timestamp information."""
-    
-    start: float = Field(
-        ...,
-        description="Start time of segment in seconds"
-    )
-    
-    end: float = Field(
-        ...,
-        description="End time of segment in seconds"
-    )
-    
-    text: str = Field(
-        ...,
-        description="Transcribed text for this segment"
-    )
-    
-    confidence: float = Field(
-        default=1.0,
-        ge=0.0,
-        le=1.0,
-        description="Confidence score for this segment (0.0-1.0)"
-    )
-    
-    speaker: Optional[int] = Field(
-        default=None,
-        description="Speaker ID if diarization is enabled"
-    )
-
 
 class Transcript(BaseModel):
     """Represents a transcript of an audio file."""
@@ -152,9 +122,9 @@ class Transcript(BaseModel):
         description="The audio file this transcript is for"
     )
     
-    segments: List[TranscriptSegment] = Field(
-        default_factory=list,
-        description="List of transcript segments with timestamps"
+    text: str = Field(
+        default_factory=str,
+        description="Full transcript text"
     )
     
     language: str = Field(
@@ -187,46 +157,7 @@ class Transcript(BaseModel):
         description="Additional metadata about the transcript"
     )
     
-    @property
-    def text(self) -> str:
-        """Get the full transcript text."""
-        return " ".join(segment.text for segment in self.segments)
-    
-    @property
-    def duration(self) -> float:
-        """Get the duration of the transcript in seconds."""
-        if not self.segments:
-            return 0.0
-        return max(segment.end for segment in self.segments)
-    
-    def add_segment(self, segment: TranscriptSegment) -> None:
-        """Add a segment to the transcript."""
-        self.segments.append(segment)
-        self.updated_at = datetime.datetime.now()
-    
-    def find_segments_by_time(self, start_time: float, end_time: Optional[float] = None) -> List[TranscriptSegment]:
-        """Find segments that overlap with the given time range."""
-        if end_time is None:
-            end_time = start_time
-            
-        return [
-            segment for segment in self.segments
-            if (segment.start <= end_time and segment.end >= start_time)
-        ]
-    
-    def find_segments_by_text(self, search_text: str, case_sensitive: bool = False) -> List[TranscriptSegment]:
-        """Find segments containing the given text."""
-        if not case_sensitive:
-            search_text = search_text.lower()
-            return [
-                segment for segment in self.segments
-                if search_text in segment.text.lower()
-            ]
-        else:
-            return [
-                segment for segment in self.segments
-                if search_text in segment.text
-            ]
+    # No segment-level operations are needed for plain-text transcripts.
 
 
 class SummaryType(str, enum.Enum):
