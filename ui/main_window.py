@@ -15,7 +15,7 @@ from PySide6.QtGui import QAction, QFont, QIcon, QTextCursor
 from PySide6.QtWidgets import (
     QApplication, QFileDialog, QHBoxLayout, QLabel, QMainWindow, 
     QMenu, QMenuBar, QMessageBox, QProgressBar, QPushButton, 
-    QSplitter, QStatusBar, QTextEdit, QToolBar, QVBoxLayout, QWidget
+    QStatusBar, QTextEdit, QToolBar, QVBoxLayout, QWidget
 )
 from PySide6.QtQml import QQmlApplicationEngine
 
@@ -78,59 +78,30 @@ class MainWindow(QMainWindow):
         # Create toolbar
         self._create_toolbar()
         
-        # Create splitter for transcript and summary
-        splitter = QSplitter(Qt.Vertical)
-        main_layout.addWidget(splitter)
-        
-        # Create transcript area
-        transcript_widget = QWidget()
-        transcript_layout = QVBoxLayout(transcript_widget)
-        
-        transcript_header = QHBoxLayout()
-        transcript_label = QLabel("Transcript")
-        transcript_label.setFont(QFont("Arial", 12, QFont.Bold))
-        transcript_header.addWidget(transcript_label)
-        
+        # ----- Combined transcript & summary area -----
+        header_layout = QHBoxLayout()
+        header_label = QLabel("Summary & Transcript")
+        header_label.setFont(QFont("Arial", 12, QFont.Bold))
+        header_layout.addWidget(header_label)
+
         self.transcript_status = QLabel("No transcript loaded")
-        transcript_header.addWidget(self.transcript_status)
-        transcript_header.addStretch()
-        
-        self.transcript_text = QTextEdit()
-        self.transcript_text.setReadOnly(True)
-        self.transcript_text.setPlaceholderText("Transcript will appear here")
-        
-        transcript_layout.addLayout(transcript_header)
-        transcript_layout.addWidget(self.transcript_text)
-        
-        # Create summary area
-        summary_widget = QWidget()
-        summary_layout = QVBoxLayout(summary_widget)
-        
-        summary_header = QHBoxLayout()
-        summary_label = QLabel("Summary")
-        summary_label.setFont(QFont("Arial", 12, QFont.Bold))
-        summary_header.addWidget(summary_label)
-        
+        header_layout.addWidget(self.transcript_status)
+
         self.summary_status = QLabel("No summary generated")
-        summary_header.addWidget(self.summary_status)
-        summary_header.addStretch()
-        
-        self.summarize_button = QPushButton("Generate Summary")
-        self.summarize_button.setEnabled(False)
-        self.summarize_button.clicked.connect(self._on_summarize_clicked)
-        summary_header.addWidget(self.summarize_button)
-        
-        self.summary_text = QTextEdit()
-        self.summary_text.setReadOnly(True)
-        self.summary_text.setPlaceholderText("Summary will appear here")
-        
-        summary_layout.addLayout(summary_header)
-        summary_layout.addWidget(self.summary_text)
-        
-        # Add widgets to splitter
-        splitter.addWidget(transcript_widget)
-        splitter.addWidget(summary_widget)
-        splitter.setSizes([600, 400])  # Initial sizes
+        header_layout.addWidget(self.summary_status)
+        header_layout.addStretch()
+
+        main_layout.addLayout(header_layout)
+
+        self.combined_text = QTextEdit()
+        self.combined_text.setReadOnly(True)
+        self.combined_text.setPlaceholderText(
+            "Summary (Markdown) and transcript will appear here"
+        )
+        main_layout.addWidget(self.combined_text)
+
+        # Holds latest markdown so we can save exact content
+        self._combined_markdown: str = ""
         
         # Create status bar
         self.status_bar = QStatusBar()
@@ -163,15 +134,11 @@ class MainWindow(QMainWindow):
         
         file_menu.addSeparator()
         
-        save_transcript_action = QAction("Save &Transcript...", self)
-        save_transcript_action.setShortcut("Ctrl+S")
-        save_transcript_action.triggered.connect(self._on_save_transcript)
-        file_menu.addAction(save_transcript_action)
-        
-        save_summary_action = QAction("Save S&ummary...", self)
-        save_summary_action.setShortcut("Ctrl+Shift+S")
-        save_summary_action.triggered.connect(self._on_save_summary)
-        file_menu.addAction(save_summary_action)
+        # Combined save action replaces separate transcript and summary save actions
+        save_combined_action = QAction("&Save Content...", self)
+        save_combined_action.setShortcut("Ctrl+S")
+        save_combined_action.triggered.connect(self._on_save_combined)
+        file_menu.addAction(save_combined_action)
         
         file_menu.addSeparator()
         
@@ -241,6 +208,60 @@ class MainWindow(QMainWindow):
         self.app.summarization_complete.connect(self._on_summarization_complete)
         self.app.summarization_failed.connect(self._on_summarization_failed)
     
+    def _update_combined_content(self, transcript_text="", summary_text=""):
+        """
+        Update the combined content with summary and transcript.
+        
+        Args:
+            transcript_text: The transcript text
+            summary_text: The summary text (markdown)
+        """
+        # Store raw content for saving
+        if summary_text:
+            self._combined_markdown = f"{summary_text}\n\n---\n\n{transcript_text}"
+        else:
+            self._combined_markdown = transcript_text
+        
+        # Render markdown for the summary
+        if summary_text:
+            # Simple markdown to HTML conversion for the summary
+            # This is a basic implementation - in a real app, you'd use a proper markdown library
+            html_summary = summary_text
+            # Convert headers
+            for i in range(6, 0, -1):
+                h_tag = f"h{i}"
+                html_summary = html_summary.replace(f"{'#' * i} ", f"<{h_tag}>") + f"</{h_tag}>"
+            
+            # Convert bold and italic
+            html_summary = html_summary.replace("**", "<strong>").replace("__", "<strong>")
+            html_summary = html_summary.replace("*", "<em>").replace("_", "<em>")
+            
+            # Convert bullet lists
+            html_summary = html_summary.replace("\n- ", "\n<li>").replace("\n* ", "\n<li>")
+            if "<li>" in html_summary:
+                html_summary = "<ul>" + html_summary + "</ul>"
+                html_summary = html_summary.replace("\n<li>", "</li>\n<li>")
+            
+            # Convert line breaks
+            html_summary = html_summary.replace("\n\n", "<br><br>")
+            
+            # Create the combined HTML content
+            html_content = f"""
+            <html>
+            <body>
+            {html_summary}
+            <hr>
+            <pre>{transcript_text}</pre>
+            </body>
+            </html>
+            """
+            
+            # Set the HTML content
+            self.combined_text.setHtml(html_content)
+        else:
+            # Just plain text for transcript only
+            self.combined_text.setPlainText(transcript_text)
+    
     @Slot()
     def _on_open_file(self):
         """Handle opening an audio file."""
@@ -271,10 +292,9 @@ class MainWindow(QMainWindow):
             # Update UI
             self.status_label.setText(f"Loaded: {audio_file.path.name}")
             self.transcript_status.setText(f"File: {audio_file.path.name}")
-            self.transcript_text.clear()
-            self.summary_text.clear()
+            self.combined_text.clear()
+            self._combined_markdown = ""
             self.summary_status.setText("No summary generated")
-            self.summarize_button.setEnabled(False)
             
             # Auto-transcribe if configured
             if self.app.config.auto_transcribe:
@@ -301,10 +321,13 @@ class MainWindow(QMainWindow):
             if transcript:
                 self.transcript_status.setText("Transcription complete")
                 self.status_label.setText("Transcription complete")
-                self.transcript_text.setText(transcript.text)
-                # Enable summarise button if LLM available
+                
+                # Update the combined text with transcript
+                self._update_combined_content(transcript_text=transcript.text)
+                
+                # Auto-summarize if LLM is available
                 if hasattr(self.app, 'summarizer') and self.app.summarizer:
-                    self.summarize_button.setEnabled(True)
+                    self._start_summarization(transcript)
             else:
                 # Fallback UI update
                 self.status_label.setText("Recording stopped")
@@ -319,10 +342,9 @@ class MainWindow(QMainWindow):
             # Update UI
             self.status_label.setText("Recording from microphone...")
             self.transcript_status.setText("Recording in progress...")
-            self.transcript_text.clear()
-            self.summary_text.clear()
+            self.combined_text.clear()
+            self._combined_markdown = ""
             self.summary_status.setText("No summary generated")
-            self.summarize_button.setEnabled(False)
             
             # Set recording flag
             self._recording = True
@@ -439,10 +461,10 @@ class MainWindow(QMainWindow):
             # We'll handle this via the summarization_failed signal
     
     @Slot()
-    def _on_save_transcript(self):
-        """Handle saving the transcript."""
+    def _on_save_combined(self):
+        """Handle saving the combined content (summary + transcript)."""
         if not self._active_transcript_id:
-            QMessageBox.warning(self, "Warning", "No transcript available to save")
+            QMessageBox.warning(self, "Warning", "No content available to save")
             return
         
         transcript = self.app.get_transcript(self._active_transcript_id)
@@ -452,12 +474,12 @@ class MainWindow(QMainWindow):
         
         # Show save dialog
         file_dialog = QFileDialog(self)
-        file_dialog.setWindowTitle("Save Transcript")
+        file_dialog.setWindowTitle("Save Content")
         file_dialog.setAcceptMode(QFileDialog.AcceptSave)
-        file_dialog.setNameFilter("Text Files (*.txt);;SRT Files (*.srt);;All Files (*.*)")
+        file_dialog.setNameFilter("Text Files (*.txt);;Markdown Files (*.md);;All Files (*.*)")
         
         # Suggest filename based on audio file
-        suggested_name = transcript.audio_file.path.stem + ".txt"
+        suggested_name = transcript.audio_file.path.stem + "_transcript.md"
         file_dialog.selectFile(suggested_name)
         
         if file_dialog.exec():
@@ -466,64 +488,15 @@ class MainWindow(QMainWindow):
                 save_path = file_paths[0]
                 
                 try:
-                    # Determine format based on extension
-                    if save_path.lower().endswith(".srt"):
-                        # Save as SRT
-                        with open(save_path, "w", encoding="utf-8") as f:
-                            f.write(transcript.to_srt())
-                    else:
-                        # Save as plain text
-                        with open(save_path, "w", encoding="utf-8") as f:
-                            f.write(transcript.text)
-                    
-                    self.status_label.setText(f"Transcript saved to {save_path}")
-                    
-                except Exception as e:
-                    logger.error(f"Error saving transcript: {e}")
-                    QMessageBox.critical(self, "Error", f"Failed to save transcript: {e}")
-    
-    @Slot()
-    def _on_save_summary(self):
-        """Handle saving the summary."""
-        if not self._active_summary_id:
-            QMessageBox.warning(self, "Warning", "No summary available to save")
-            return
-        
-        summary = self.app.get_summary(self._active_summary_id)
-        if not summary:
-            QMessageBox.warning(self, "Warning", "Summary not found")
-            return
-        
-        # Show save dialog
-        file_dialog = QFileDialog(self)
-        file_dialog.setWindowTitle("Save Summary")
-        file_dialog.setAcceptMode(QFileDialog.AcceptSave)
-        file_dialog.setNameFilter("Text Files (*.txt);;All Files (*.*)")
-        
-        # Get the transcript to suggest a filename
-        transcript = self.app.get_transcript(summary.transcript_id)
-        if transcript:
-            suggested_name = transcript.audio_file.path.stem + "_summary.txt"
-        else:
-            suggested_name = "summary.txt"
-        
-        file_dialog.selectFile(suggested_name)
-        
-        if file_dialog.exec():
-            file_paths = file_dialog.selectedFiles()
-            if file_paths:
-                save_path = file_paths[0]
-                
-                try:
-                    # Save as plain text
+                    # Save the combined content
                     with open(save_path, "w", encoding="utf-8") as f:
-                        f.write(summary.text)
+                        f.write(self._combined_markdown)
                     
-                    self.status_label.setText(f"Summary saved to {save_path}")
+                    self.status_label.setText(f"Content saved to {save_path}")
                     
                 except Exception as e:
-                    logger.error(f"Error saving summary: {e}")
-                    QMessageBox.critical(self, "Error", f"Failed to save summary: {e}")
+                    logger.error(f"Error saving content: {e}")
+                    QMessageBox.critical(self, "Error", f"Failed to save content: {e}")
     
     @Slot()
     def _on_about(self):
@@ -566,13 +539,14 @@ class MainWindow(QMainWindow):
         # Update transcript text if available
         transcript = self.app.get_transcript(transcript_id)
         if transcript:
-            self.transcript_text.setText(transcript.text)
+            # Update the combined text with transcript only during progress
+            self._update_combined_content(transcript_text=transcript.text)
             
             # Auto-scroll to bottom
             if self.app.config.ui.auto_scroll:
-                cursor = self.transcript_text.textCursor()
+                cursor = self.combined_text.textCursor()
                 cursor.movePosition(QTextCursor.End)
-                self.transcript_text.setTextCursor(cursor)
+                self.combined_text.setTextCursor(cursor)
     
     @Slot(str)
     def _on_transcription_complete(self, transcript_id):
@@ -590,12 +564,12 @@ class MainWindow(QMainWindow):
         self.status_label.setText("Transcription complete")
         self.progress_bar.setVisible(False)
         
-        # Update transcript text
-        self.transcript_text.setText(transcript.text)
+        # Update the combined text with transcript
+        self._update_combined_content(transcript_text=transcript.text)
         
-        # Enable summarize button if LLM is available
-        if hasattr(self.app, 'summarizer') and self.app.summarizer:
-            self.summarize_button.setEnabled(True)
+        # Auto-summarize if configured and LLM is available
+        if self.app.config.auto_summarize and hasattr(self.app, 'summarizer') and self.app.summarizer:
+            self._start_summarization(transcript)
     
     @Slot(str, str)
     def _on_transcription_failed(self, transcript_id, error_message):
@@ -629,12 +603,20 @@ class MainWindow(QMainWindow):
         if not summary:
             return
         
+        # Get the transcript
+        transcript = self.app.get_transcript(summary.transcript_id)
+        if not transcript:
+            return
+        
         # Update UI
         self.summary_status.setText("Summary generated")
         self.status_label.setText("Summary generated successfully")
         
-        # Update summary text
-        self.summary_text.setText(summary.text)
+        # Update the combined text with summary and transcript
+        self._update_combined_content(
+            transcript_text=transcript.text,
+            summary_text=summary.text
+        )
     
     @Slot(str, str)
     def _on_summarization_failed(self, summary_id, error_message):
