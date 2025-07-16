@@ -117,7 +117,7 @@ class MainWindow(QMainWindow):
         header_layout.setContentsMargins(20, 0, 20, 0)  # Add horizontal padding to header
         
         header_label = QLabel("Summary & Transcript")
-        header_font = QFont("Geist Mono", 14, QFont.Bold)
+        header_font = QFont("Geist", 14, QFont.Bold)
         header_font.setStyleHint(QFont.SansSerif)
         header_label.setFont(header_font)
         header_label.setStyleSheet(f"color: {TEXT_COLOR};")
@@ -139,7 +139,7 @@ class MainWindow(QMainWindow):
         self.combined_text.setReadOnly(True)
         
         # Use a nice sans-serif font with larger size
-        content_font = QFont("Geist Mono", 18)
+        content_font = QFont("Geist", 18)
         content_font.setStyleHint(QFont.SansSerif)  # Fallback to system sans-serif if Inter not available
         self.combined_text.setFont(content_font)
         
@@ -229,7 +229,7 @@ class MainWindow(QMainWindow):
         self.setStatusBar(self.status_bar)
         
         self.status_label = QLabel("Ready")
-        self.status_label.setStyleSheet("color: black; font-family: 'Geist Mono', sans-serif;")
+        self.status_label.setStyleSheet("color: black; font-family: 'Geist', sans-serif;")
         self.status_bar.addWidget(self.status_label, 1)
         
         self.progress_bar = QProgressBar()
@@ -262,14 +262,14 @@ class MainWindow(QMainWindow):
         # ------------------------------------------------------------------#
         # Text-based loading indicator (ASCII spinner)                      #
         # ------------------------------------------------------------------#
-        self._spinner_chars = ["-", "\\", "|", "/"]
+        self._spinner_chars = list("⣾⣽⣻⢿⡿⣟⣯⣷")[::-1]
         self._spinner_idx = 0
         self._spinner_timer = QTimer(self)
         self._spinner_timer.setInterval(150)
         self._spinner_timer.timeout.connect(self._update_spinner)
 
         self.loading_label = QLabel("Loading " + self._spinner_chars[0])
-        loading_font = QFont("Geist Mono", 12, QFont.Bold)
+        loading_font = QFont("Geist", 12, QFont.Bold)
         loading_font.setStyleHint(QFont.SansSerif)
         self.loading_label.setFont(loading_font)
         self.loading_label.setStyleSheet("""
@@ -380,7 +380,7 @@ class MainWindow(QMainWindow):
                 border: 1px solid {BORDER_COLOR};
                 padding: 8px 16px;
                 margin: 2px;
-                font-family: 'Geist Mono', sans-serif;
+                font-family: 'Geist', sans-serif;
                 font-size: 14px;
                 min-height: 20px;
                 border-radius: 6px;
@@ -640,66 +640,64 @@ class MainWindow(QMainWindow):
         else:
             self._combined_markdown = transcript_text
         
-        # Render markdown for the summary
+        # Convert markdown to plain text for better font rendering
         if summary_text:
-            # Simple markdown to HTML conversion for the summary
-            # This is a basic implementation - in a real app, you'd use a proper markdown library
-            html_summary = summary_text
-            # Convert headers
-            for i in range(6, 0, -1):
-                h_tag = f"h{i}"
-                html_summary = html_summary.replace(f"{'#' * i} ", f"<{h_tag}>") + f"</{h_tag}>"
+            # Simple markdown to plain text conversion
+            plain_summary = self._markdown_to_plain_text(summary_text)
             
-            # Convert bold and italic
-            html_summary = html_summary.replace("**", "<strong>").replace("__", "<strong>")
-            html_summary = html_summary.replace("*", "<em>").replace("_", "<em>")
+            # Wrap the summary text as well
+            wrapped_summary = self._wrap_text(plain_summary, width=65)
             
-            # Convert bullet lists
-            html_summary = html_summary.replace("\n- ", "\n<li>").replace("\n* ", "\n<li>")
-            if "<li>" in html_summary:
-                html_summary = "<ul>" + html_summary + "</ul>"
-                html_summary = html_summary.replace("\n<li>", "</li>\n<li>")
+            # Create the combined plain text content
+            combined_content = f"{wrapped_summary}\n\n{'─' * 65}\n\n{wrapped_transcript}"
             
-            # Convert line breaks
-            html_summary = html_summary.replace("\n\n", "<br><br>")
-            
-            # Create the combined HTML content with proper font styling
-            html_content = f"""
-            <html>
-            <head>
-                <style>
-                    body {{ 
-                        font-family: 'Geist Mono', 'Helvetica Neue', Arial, sans-serif; 
-                        font-size: 18px;
-                        line-height: 1.5;
-                    }}
-                    pre {{ 
-                        font-family: 'Geist Mono', 'Helvetica Neue', Arial, sans-serif;
-                        font-size: 18px;
-                        white-space: pre-wrap;
-                        margin-top: 20px;
-                    }}
-                    hr {{ 
-                        border: 0;
-                        height: 1px;
-                        background: #ccc;
-                        margin: 20px 0;
-                    }}
-                </style>
-            </head>
-            <body>
-            {html_summary}
-            <hr>
-            <pre>{wrapped_transcript}</pre>
-            </body>
-            </html>
-            """
-            
-            # Set the HTML content
-            self.combined_text.setHtml(html_content)
+            # Set as plain text to avoid font rendering issues
+            self.combined_text.setPlainText(combined_content)
         else:
             # Just plain text for transcript only (wrapped)
             self.combined_text.setPlainText(wrapped_transcript)
+
+    def _markdown_to_plain_text(self, markdown_text: str) -> str:
+        """
+        Convert markdown to plain text with simple formatting.
+        
+        Args:
+            markdown_text: The markdown text to convert
+            
+        Returns:
+            Plain text representation
+        """
+        text = markdown_text
+        
+        # Convert headers to uppercase with spacing
+        import re
+        
+        # H1 headers (# )
+        text = re.sub(r'^# (.+)$', lambda m: f"\n{m.group(1).upper()}\n{'=' * len(m.group(1))}", text, flags=re.MULTILINE)
+        
+        # H2 headers (## )
+        text = re.sub(r'^## (.+)$', lambda m: f"\n{m.group(1).upper()}\n{'-' * len(m.group(1))}", text, flags=re.MULTILINE)
+        
+        # H3+ headers (### )
+        text = re.sub(r'^#{3,} (.+)$', lambda m: f"\n{m.group(1).upper()}", text, flags=re.MULTILINE)
+        
+        # Remove bold/italic markers (keep the text)
+        text = re.sub(r'\*\*(.+?)\*\*', r'\1', text)  # **bold**
+        text = re.sub(r'__(.+?)__', r'\1', text)      # __bold__
+        text = re.sub(r'\*(.+?)\*', r'\1', text)      # *italic*
+        text = re.sub(r'_(.+?)_', r'\1', text)        # _italic_
+        
+        # Convert bullet points
+        text = re.sub(r'^[-*+] (.+)$', r'• \1', text, flags=re.MULTILINE)
+        
+        # Convert numbered lists
+        text = re.sub(r'^\d+\. (.+)$', r'• \1', text, flags=re.MULTILINE)
+        
+        # Clean up extra whitespace
+        text = re.sub(r'\n{3,}', '\n\n', text)
+        text = text.strip()
+        
+        return text
     
     @Slot()
     def _on_open_file(self):

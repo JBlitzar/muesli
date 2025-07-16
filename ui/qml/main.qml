@@ -33,7 +33,7 @@ ApplicationWindow {
     property color cardColor: "#fcfbf6"
     
     // Font settings
-    property string fontFamily: "Geist Mono, Helvetica Neue, Arial, sans-serif"
+    property string fontFamily: "Geist, Helvetica Neue, Arial, sans-serif"
     property int baseFontSize: 18
     /* Simple ASCII spinner setup */
     property var  spinnerChars: ["-", "\\\\", "|", "/"]
