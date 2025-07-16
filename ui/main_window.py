@@ -93,7 +93,7 @@ class MainWindow(QMainWindow):
         # ----- Combined transcript & summary area -----
         header_layout = QHBoxLayout()
         header_label = QLabel("Summary & Transcript")
-        header_font = QFont("Segoe UI", 14, QFont.Bold)
+        header_font = QFont("Inter", 14, QFont.Bold)
         header_font.setStyleHint(QFont.SansSerif)
         header_label.setFont(header_font)
         header_layout.addWidget(header_label)
@@ -112,8 +112,8 @@ class MainWindow(QMainWindow):
         self.combined_text.setReadOnly(True)
         
         # Use a nice sans-serif font with larger size
-        content_font = QFont("Segoe UI", 18)
-        content_font.setStyleHint(QFont.SansSerif)  # Fallback to system sans-serif if Segoe UI not available
+        content_font = QFont("Inter", 18)
+        content_font.setStyleHint(QFont.SansSerif)  # Fallback to system sans-serif if Inter not available
         self.combined_text.setFont(content_font)
         
         # Set line width for word wrap (65 characters)
@@ -160,7 +160,7 @@ class MainWindow(QMainWindow):
         self._spinner_timer.timeout.connect(self._update_spinner)
 
         self.loading_label = QLabel("Loading " + self._spinner_chars[0])
-        loading_font = QFont("Segoe UI", 12, QFont.Bold)
+        loading_font = QFont("Inter", 12, QFont.Bold)
         loading_font.setStyleHint(QFont.SansSerif)
         self.loading_label.setFont(loading_font)
         self.loading_label.setVisible(False)
@@ -482,12 +482,12 @@ class MainWindow(QMainWindow):
             <head>
                 <style>
                     body {{ 
-                        font-family: 'Segoe UI', 'Helvetica Neue', Arial, sans-serif; 
+                        font-family: 'Inter', 'Helvetica Neue', Arial, sans-serif; 
                         font-size: 18px;
                         line-height: 1.5;
                     }}
                     pre {{ 
-                        font-family: 'Segoe UI', 'Helvetica Neue', Arial, sans-serif;
+                        font-family: 'Inter', 'Helvetica Neue', Arial, sans-serif;
                         font-size: 18px;
                         white-space: pre-wrap;
                         margin-top: 20px;

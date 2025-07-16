@@ -24,7 +24,7 @@ class OllamaClient:
     def __init__(
         self,
         base_url: str = "http://localhost:11434",  # Kept for API compatibility
-        model_name: str = "llama3.2",
+        model_name: str = "llama3.1:8b",
         offline_mode: bool = True,
     ):
         """
