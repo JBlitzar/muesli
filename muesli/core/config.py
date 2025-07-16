@@ -18,8 +18,6 @@ from pydantic import (
     field_validator, 
     model_validator, 
     ConfigDict,
-    DirectoryPath, 
-    FilePath
 )
 
 
@@ -168,22 +166,6 @@ class UIConfig(BaseModel):
     )
 
 
-class DatabaseConfig(BaseModel):
-    """Configuration for the database."""
-    
-    path: Path = Field(
-        default=Path.home() / ".muesli" / "data" / "muesli.db",
-        description="Path to SQLite database file"
-    )
-    
-    @field_validator("path")
-    @classmethod
-    def ensure_db_dir(cls, v: Path) -> Path:
-        """Ensure the database directory exists."""
-        v.parent.mkdir(parents=True, exist_ok=True)
-        return v
-
-
 class PrivacyConfig(BaseModel):
     """Configuration for privacy settings."""
     
@@ -240,11 +222,6 @@ class AppConfig(BaseModel):
     ui: UIConfig = Field(
         default_factory=UIConfig,
         description="UI module configuration"
-    )
-    
-    database: DatabaseConfig = Field(
-        default_factory=DatabaseConfig,
-        description="Database configuration"
     )
     
     privacy: PrivacyConfig = Field(

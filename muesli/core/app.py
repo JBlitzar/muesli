@@ -17,7 +17,6 @@ from PySide6.QtCore import QObject, Signal, Slot
 from PySide6.QtWidgets import QApplication
 
 from muesli.core.config import AppConfig, load_config
-from muesli.core.job_queue import Job, JobQueue, JobStatus, JobType
 from muesli.core.models import AudioFile, Summary, Transcript, TranscriptSegment
 from muesli.llm.ollama_client import OllamaClient
 from muesli.llm.summarizer import TranscriptSummarizer
@@ -65,9 +64,6 @@ class MuesliApp(QObject):
         # Initialize components
         self._init_components()
         
-        # Initialize job queue
-        self.job_queue = self._create_job_queue()
-        
         # UI components (initialized lazily)
         self._app: Optional[QApplication] = None
         self._main_window: Optional[MainWindow] = None
@@ -89,9 +85,6 @@ class MuesliApp(QObject):
         
         # Ensure model directories exist
         self.config.transcription.model_dir.mkdir(parents=True, exist_ok=True)
-        
-        # Create database directory if needed
-        self.config.database.path.parent.mkdir(parents=True, exist_ok=True)
     
     def _init_components(self) -> None:
         """Initialize application components based on configuration."""
@@ -127,17 +120,6 @@ class MuesliApp(QObject):
             self.summarizer = None
             logger.info("LLM features disabled (provider set to 'none')")
     
-    def _create_job_queue(self) -> JobQueue:
-        """Create and configure the job queue."""
-        # Create a job queue with handlers for our job types
-        job_queue = _MuesliJobQueue(max_workers=4)
-        
-        # Register handlers for job types
-        job_queue.register_handler(JobType.TRANSCRIPTION, self._handle_transcription_job)
-        job_queue.register_handler(JobType.SUMMARIZATION, self._handle_summarization_job)
-        
-        return job_queue
-    
     def start_ui(self) -> int:
         """
         Start the UI application.
@@ -164,10 +146,6 @@ class MuesliApp(QObject):
     def shutdown(self) -> None:
         """Shut down the application and clean up resources."""
         logger.info("Shutting down Muesli application")
-        
-        # Shut down job queue
-        if hasattr(self, 'job_queue'):
-            self.job_queue.shutdown(wait=True)
         
         # Close any open resources
         if hasattr(self, 'transcriber'):
@@ -218,43 +196,45 @@ class MuesliApp(QObject):
         with self._lock:
             self._active_transcripts[transcript.id] = transcript
         
-        # Create job parameters
-        params = {
-            "transcript_id": transcript.id,
-            "audio_path": str(audio_path),
-            "language": language,
-            "auto_detect_language": auto_detect_language,
-        }
+        # Emit signal that transcription has started
+        self.transcription_started.emit(transcript.id)
         
-        # Define callbacks
-        def on_complete(result: Transcript) -> None:
-            self.transcription_complete.emit(result.id)
+        try:
+            # Define progress callback
+            def progress_callback(progress: float, message: Optional[str] = None) -> None:
+                self.transcription_progress.emit(transcript.id, progress, message or "")
+                if on_progress:
+                    on_progress(progress, message)
+            
+            # Perform transcription directly
+            result = self.transcriber.transcribe(
+                audio_path=str(audio_path),
+                language=language,
+                auto_detect_language=auto_detect_language,
+                progress_callback=progress_callback,
+            )
+            
+            # Update transcript
+            with self._lock:
+                transcript.segments = result.segments
+                transcript.language = result.language
+                transcript.model_name = result.model_name
+                transcript.is_complete = True
+                transcript.metadata.update(result.metadata)
+            
+            # Emit completion signal
+            self.transcription_complete.emit(transcript.id)
             
             # Auto-summarize if configured
             if self.config.auto_summarize and self.summarizer:
-                self.summarize_transcript(result)
-        
-        def on_error(error: Exception) -> None:
-            self.transcription_failed.emit(transcript.id, str(error))
-        
-        def on_progress_update(progress: float, message: Optional[str]) -> None:
-            self.transcription_progress.emit(transcript.id, progress, message or "")
-            if on_progress:
-                on_progress(progress, message)
-        
-        # Add job to queue
-        self.job_queue.add_job(
-            job_type=JobType.TRANSCRIPTION,
-            params=params,
-            on_complete=on_complete,
-            on_error=on_error,
-            on_progress=on_progress_update,
-        )
-        
-        # Emit signal
-        self.transcription_started.emit(transcript.id)
-        
-        return transcript
+                self.summarize_transcript(transcript)
+                
+            return transcript
+            
+        except Exception as e:
+            logger.error(f"Transcription failed: {e}")
+            self.transcription_failed.emit(transcript.id, str(e))
+            raise
     
     def start_streaming_transcription(
         self,
@@ -315,7 +295,12 @@ class MuesliApp(QObject):
             transcript = self._active_transcripts.get(transcript_id)
             if transcript:
                 transcript.add_segment(segment)
-                # Signal could be added here to update UI with new segment
+                # Signal progress update
+                self.transcription_progress.emit(
+                    transcript_id, 
+                    len(transcript.segments) / 10.0,  # Approximate progress
+                    f"Added segment: {segment.text[:30]}..."
+                )
     
     def get_transcript(self, transcript_id: str) -> Optional[Transcript]:
         """
@@ -372,32 +357,30 @@ class MuesliApp(QObject):
         with self._lock:
             self._active_summaries[summary.id] = summary
         
-        # Create job parameters
-        params = {
-            "summary_id": summary.id,
-            "transcript_id": transcript_obj.id,
-            "prompt_template": prompt_template,
-        }
-        
-        # Define callbacks
-        def on_complete(result: Summary) -> None:
-            self.summarization_complete.emit(result.id)
-        
-        def on_error(error: Exception) -> None:
-            self.summarization_failed.emit(summary.id, str(error))
-        
-        # Add job to queue
-        self.job_queue.add_job(
-            job_type=JobType.SUMMARIZATION,
-            params=params,
-            on_complete=on_complete,
-            on_error=on_error,
-        )
-        
         # Emit signal
         self.summarization_started.emit(summary.id)
         
-        return summary
+        try:
+            # Generate summary directly
+            summary_text = self.summarizer.summarize(
+                transcript=transcript_obj,
+                prompt_template=prompt_template,
+            )
+            
+            # Update summary
+            with self._lock:
+                summary.text = summary_text
+                summary.model_name = self.config.llm.model_name
+            
+            # Emit completion signal
+            self.summarization_complete.emit(summary.id)
+            
+            return summary
+            
+        except Exception as e:
+            logger.error(f"Summarization failed: {e}")
+            self.summarization_failed.emit(summary.id, str(e))
+            return None
     
     def get_summary(self, summary_id: str) -> Optional[Summary]:
         """
@@ -411,120 +394,3 @@ class MuesliApp(QObject):
         """
         with self._lock:
             return self._active_summaries.get(summary_id)
-    
-    # Job handlers
-    
-    def _handle_transcription_job(self, job: Job) -> Transcript:
-        """
-        Handle a transcription job.
-        
-        Args:
-            job: Transcription job
-            
-        Returns:
-            Updated transcript
-        """
-        params = job.params
-        transcript_id = params["transcript_id"]
-        audio_path = params["audio_path"]
-        language = params.get("language")
-        auto_detect_language = params.get("auto_detect_language", self.config.transcription.auto_language_detection)
-        
-        # Get transcript
-        with self._lock:
-            transcript = self._active_transcripts.get(transcript_id)
-            if not transcript:
-                raise ValueError(f"Transcript not found: {transcript_id}")
-        
-        # Progress callback
-        def progress_callback(progress: float, message: Optional[str] = None) -> None:
-            job.update_progress(progress, message)
-        
-        # Perform transcription
-        result = self.transcriber.transcribe(
-            audio_path=audio_path,
-            language=language,
-            auto_detect_language=auto_detect_language,
-            progress_callback=progress_callback,
-        )
-        
-        # Update transcript
-        with self._lock:
-            transcript.segments = result.segments
-            transcript.language = result.language
-            transcript.model_name = result.model_name
-            transcript.is_complete = True
-            transcript.metadata.update(result.metadata)
-        
-        return transcript
-    
-    def _handle_summarization_job(self, job: Job) -> Summary:
-        """
-        Handle a summarization job.
-        
-        Args:
-            job: Summarization job
-            
-        Returns:
-            Updated summary
-        """
-        params = job.params
-        summary_id = params["summary_id"]
-        transcript_id = params["transcript_id"]
-        prompt_template = params.get("prompt_template")
-        
-        # Get summary and transcript
-        with self._lock:
-            summary = self._active_summaries.get(summary_id)
-            if not summary:
-                raise ValueError(f"Summary not found: {summary_id}")
-            
-            transcript = self._active_transcripts.get(transcript_id)
-            if not transcript:
-                raise ValueError(f"Transcript not found: {transcript_id}")
-        
-        # Generate summary
-        summary_text = self.summarizer.summarize(
-            transcript=transcript,
-            prompt_template=prompt_template,
-        )
-        
-        # Update summary
-        with self._lock:
-            summary.text = summary_text
-            summary.model_name = self.config.llm.model_name
-        
-        return summary
-
-
-class _MuesliJobQueue(JobQueue):
-    """
-    Extended JobQueue with handlers for Muesli-specific job types.
-    """
-    
-    def __init__(self, max_workers: int = 4):
-        """Initialize the job queue."""
-        super().__init__(max_workers=max_workers)
-        self._handlers: Dict[JobType, callable] = {}
-    
-    def register_handler(self, job_type: JobType, handler: callable) -> None:
-        """
-        Register a handler for a job type.
-        
-        Args:
-            job_type: Type of job
-            handler: Handler function
-        """
-        self._handlers[job_type] = handler
-    
-    def _get_job_handler(self, job_type: JobType) -> Optional[callable]:
-        """
-        Get the handler for a job type.
-        
-        Args:
-            job_type: Type of job
-            
-        Returns:
-            Handler function or None if not registered
-        """
-        return self._handlers.get(job_type)

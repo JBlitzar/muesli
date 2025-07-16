@@ -5,7 +5,7 @@ This module serves as the central orchestrator for the application, providing:
 - Application initialization and lifecycle management
 - Configuration handling and validation
 - Data models for transcripts and metadata
-- Job queue for background processing tasks
+  (Previously included a background job-queue, now removed for simplicity)
 
 All other modules (transcription, llm, ui) communicate with the application
 through the interfaces provided by this module.
@@ -15,7 +15,6 @@ through the interfaces provided by this module.
 from muesli.core.app import MuesliApp
 from muesli.core.config import AppConfig, load_config
 from muesli.core.models import Transcript, AudioFile, Summary
-from muesli.core.job_queue import JobQueue, Job, JobStatus
 
 __all__ = [
     "MuesliApp",
@@ -24,7 +23,4 @@ __all__ = [
     "Transcript", 
     "AudioFile", 
     "Summary",
-    "JobQueue", 
-    "Job", 
-    "JobStatus",
 ]

@@ -6,6 +6,8 @@ transcribing audio files. It handles model loading, inference, and resource
 management.
 """
 
+import hashlib
+import json
 import logging
 import os
 import platform
@@ -15,6 +17,12 @@ import tempfile
 from enum import Enum
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Tuple, Union
+
+try:
+    import httpx
+    HTTPX_AVAILABLE = True
+except ImportError:
+    HTTPX_AVAILABLE = False
 
 import numpy as np
 
@@ -82,6 +90,7 @@ class WhisperTranscriber:
         device: str = "auto",
         beam_size: int = 5,
         download_if_missing: bool = True,
+        whisper_binary: Optional[str] = None,
     ):
         """
         Initialize the transcriber.
@@ -92,6 +101,7 @@ class WhisperTranscriber:
             device: Device to use for inference ('cpu', 'cuda', 'mps', or 'auto')
             beam_size: Beam size for decoding
             download_if_missing: Whether to download the model if not found
+            whisper_binary: Path to whisper.cpp binary (defaults to 'whisper-cpp' or 'whisper.exe')
         """
         self.model_name = model_name
         self.model_dir = model_dir or Path.home() / ".muesli" / "models" / "whisper"
@@ -99,15 +109,70 @@ class WhisperTranscriber:
         self.beam_size = beam_size
         self.download_if_missing = download_if_missing
         
+        # Find whisper binary
+        self.whisper_binary = self._find_whisper_binary(whisper_binary)
+        
         # Create model directory if it doesn't exist
         self.model_dir.mkdir(parents=True, exist_ok=True)
         
         # Internal state
-        self._model = None
+        self._model_path = None
         self._is_initialized = False
         
         # Try to initialize the model
         self._initialize()
+    
+    def _find_whisper_binary(self, whisper_binary: Optional[str]) -> str:
+        """
+        Find the whisper.cpp binary.
+        
+        Args:
+            whisper_binary: Path to whisper.cpp binary or None to auto-detect
+            
+        Returns:
+            Path to whisper.cpp binary
+            
+        Raises:
+            RuntimeError: If whisper.cpp binary is not found
+        """
+        if whisper_binary:
+            # Use provided binary path
+            if not os.path.exists(whisper_binary):
+                raise RuntimeError(f"Whisper binary not found at {whisper_binary}")
+            return whisper_binary
+        
+        # Try to find binary in PATH
+        binary_names = ["whisper-cpp", "whisper"]
+        if platform.system() == "Windows":
+            binary_names = [f"{name}.exe" for name in binary_names]
+        
+        for name in binary_names:
+            binary_path = shutil.which(name)
+            if binary_path:
+                logger.info(f"Found whisper.cpp binary at {binary_path}")
+                return binary_path
+        
+        # Check if we can use the main executable
+        try:
+            result = subprocess.run(
+                ["whisper", "--version"], 
+                stdout=subprocess.PIPE, 
+                stderr=subprocess.PIPE,
+                text=True,
+                check=False
+            )
+            if "whisper.cpp" in result.stdout or "whisper.cpp" in result.stderr:
+                logger.info("Found whisper.cpp binary as 'whisper'")
+                return "whisper"
+        except Exception:
+            pass
+        
+        # Not found, provide instructions
+        raise RuntimeError(
+            "whisper.cpp binary not found. Please install whisper.cpp and ensure "
+            "it's in your PATH, or provide the path using the whisper_binary parameter. "
+            "Installation instructions: https://github.com/ggerganov/whisper.cpp"
+        )
     
     def _resolve_device(self, device: str) -> str:
         """
@@ -127,11 +192,15 @@ class WhisperTranscriber:
         
         # Check for CUDA
         try:
-            # This would be replaced with actual CUDA detection
-            # For example, checking for nvidia-smi or using a CUDA library
-            has_cuda = False  # Placeholder
-            if has_cuda:
-                logger.info("CUDA detected, using GPU for transcription")
+            # Check if nvidia-smi is available
+            result = subprocess.run(
+                ["nvidia-smi"], 
+                stdout=subprocess.PIPE, 
+                stderr=subprocess.PIPE,
+                check=False
+            )
+            if result.returncode == 0:
+                logger.info("CUDA detected via nvidia-smi, using GPU for transcription")
                 return "cuda"
         except Exception:
             pass
@@ -139,9 +208,10 @@ class WhisperTranscriber:
         # Check for MPS (Apple Silicon)
         if system == "Darwin" and platform.processor() == "arm":
             try:
-                # This would be replaced with actual MPS detection
-                has_mps = True  # Placeholder
-                if has_mps:
+                # Check if we're on macOS 12.3+ with Apple Silicon
+                import platform
+                mac_version = tuple(map(int, platform.mac_ver()[0].split('.')))
+                if mac_version >= (12, 3):
                     logger.info("Apple Silicon detected, using MPS for transcription")
                     return "mps"
             except Exception:
@@ -159,16 +229,47 @@ class WhisperTranscriber:
         """
         try:
             model_path = self._get_model_path()
+            self._model_path = model_path
             
-            # Load the model
-            logger.info(f"Loading Whisper model: {model_path}")
-            self._load_model(model_path)
+            # Verify the model file exists
+            if not model_path.exists():
+                raise FileNotFoundError(f"Model file not found at {model_path}")
+            
+            # Verify we can run the whisper binary
+            self._verify_whisper_binary()
             
             self._is_initialized = True
-            logger.info(f"Whisper model loaded successfully: {self.model_name}")
+            logger.info(f"Whisper model initialized successfully: {self.model_name}")
         except Exception as e:
             logger.error(f"Failed to initialize Whisper model: {e}")
             self._is_initialized = False
+    
+    def _verify_whisper_binary(self) -> None:
+        """
+        Verify that the whisper.cpp binary works.
+        
+        Raises:
+            RuntimeError: If the whisper.cpp binary doesn't work
+        """
+        try:
+            # Try to run whisper with --help
+            result = subprocess.run(
+                [self.whisper_binary, "--help"],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                check=False
+            )
+            
+            # Check if it ran successfully
+            if result.returncode != 0:
+                raise RuntimeError(
+                    f"whisper.cpp binary test failed with exit code {result.returncode}: {result.stderr}"
+                )
+            
+            logger.debug("whisper.cpp binary verified successfully")
+        except Exception as e:
+            raise RuntimeError(f"Failed to verify whisper.cpp binary: {e}")
     
     def _get_model_path(self) -> Path:
         """
@@ -226,40 +327,61 @@ class WhisperTranscriber:
         
         logger.info(f"Downloading {size_mb} MB model from {url}")
         
-        # This is a placeholder for the actual download code
-        # In a real implementation, this would use requests, urllib, or similar
-        # to download the file with progress tracking
+        if not HTTPX_AVAILABLE:
+            raise RuntimeError(
+                "httpx library not available for downloading models. "
+                "Please install it with 'pip install httpx' or manually download "
+                f"the model from {url} to {model_path}"
+            )
         
-        # For now, we'll just simulate the download with a message
-        logger.info(f"Model download not implemented yet. Please manually download from {url} to {model_path}")
-        raise NotImplementedError(
-            f"Model download not implemented. Please manually download from {url} to {model_path}"
-        )
-    
-    def _load_model(self, model_path: Path) -> None:
-        """
-        Load a Whisper model from disk.
-        
-        Args:
-            model_path: Path to the model file
+        # Download with progress tracking
+        try:
+            with httpx.stream("GET", url, follow_redirects=True) as response:
+                response.raise_for_status()
+                
+                # Get content length if available
+                total_size = int(response.headers.get("content-length", 0))
+                
+                # Create temporary file
+                with tempfile.NamedTemporaryFile(delete=False) as temp_file:
+                    temp_path = Path(temp_file.name)
+                    
+                    # Download chunks
+                    downloaded_size = 0
+                    for chunk in response.iter_bytes(chunk_size=8192):
+                        temp_file.write(chunk)
+                        downloaded_size += len(chunk)
+                        
+                        # Calculate progress
+                        if total_size > 0:
+                            progress = downloaded_size / total_size
+                            logger.debug(f"Download progress: {progress:.1%}")
             
-        Raises:
-            RuntimeError: If the model fails to load
-        """
-        # This is a placeholder for the actual whisper.cpp model loading code
-        # In a real implementation, this would use the whisper.cpp bindings
-        # to load the model into memory
-        
-        logger.info(f"Loading model from {model_path}")
-        
-        # Simulate model loading
-        self._model = {
-            "path": model_path,
-            "name": self.model_name,
-            "device": self.device,
-        }
-        
-        logger.info(f"Model loaded (simulated): {self.model_name} on {self.device}")
+            # Verify checksum
+            logger.info("Verifying model checksum...")
+            sha256_hash = hashlib.sha256()
+            with open(temp_path, "rb") as f:
+                for byte_block in iter(lambda: f.read(4096), b""):
+                    sha256_hash.update(byte_block)
+            
+            actual_sha256 = sha256_hash.hexdigest()
+            if actual_sha256 != expected_sha256:
+                os.unlink(temp_path)
+                raise RuntimeError(
+                    f"Model checksum verification failed. Expected {expected_sha256}, got {actual_sha256}"
+                )
+            
+            # Move to final location
+            model_path.parent.mkdir(parents=True, exist_ok=True)
+            shutil.move(temp_path, model_path)
+            logger.info(f"Model downloaded and verified successfully to {model_path}")
+            
+        except Exception as e:
+            # Clean up temporary file if it exists
+            if 'temp_path' in locals() and os.path.exists(temp_path):
+                os.unlink(temp_path)
+            
+            raise RuntimeError(f"Failed to download model: {e}")
     
     def transcribe(
         self,
@@ -323,12 +445,12 @@ class WhisperTranscriber:
             progress_callback(0.2, "Starting transcription...")
         
         try:
-            # This is a placeholder for the actual whisper.cpp transcription code
-            # In a real implementation, this would use the whisper.cpp bindings
-            # to perform the transcription
-            
-            # Simulate transcription with progress updates
-            segments = self._simulate_transcription(audio_path, progress_callback)
+            # Run whisper.cpp on the audio file
+            segments = self._run_whisper_transcription(
+                audio_path, 
+                transcript.language, 
+                progress_callback
+            )
             
             # Add segments to transcript
             transcript.segments = segments
@@ -353,64 +475,178 @@ class WhisperTranscriber:
         Returns:
             Detected language code (ISO 639-1)
         """
-        # This is a placeholder for the actual language detection code
-        # In a real implementation, this would use whisper.cpp to detect the language
+        logger.info(f"Detecting language for {audio_path}")
         
-        # For now, we'll just return English
-        return "en"
+        try:
+            # Run whisper.cpp with language detection only
+            cmd = [
+                self.whisper_binary,
+                "--model", str(self._model_path),
+                "--language", "auto",
+                "--detect-language",
+                "--output-json",
+                str(audio_path)
+            ]
+            
+            # Add device-specific arguments
+            if self.device == "cuda":
+                cmd.extend(["--gpu", "0"])
+            elif self.device == "mps":
+                cmd.append("--use-mmap")
+            
+            # Run the command
+            result = subprocess.run(
+                cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                check=False
+            )
+            
+            # Check for errors
+            if result.returncode != 0:
+                logger.error(f"Language detection failed: {result.stderr}")
+                return "en"  # Default to English on failure
+            
+            # Parse output to find detected language
+            try:
+                # Try to parse JSON output
+                output_lines = result.stdout.strip().split('\n')
+                for line in output_lines:
+                    if line.startswith('{') and line.endswith('}'):
+                        data = json.loads(line)
+                        if 'language' in data:
+                            return data['language']
+                
+                # If no JSON found, look for language in output
+                for line in output_lines:
+                    if "detected language: " in line.lower():
+                        parts = line.split(":")
+                        if len(parts) >= 2:
+                            lang_code = parts[1].strip().split()[0]
+                            return lang_code
+            except Exception as e:
+                logger.error(f"Error parsing language detection output: {e}")
+            
+            # Default to English if we couldn't parse the output
+            return "en"
+            
+        except Exception as e:
+            logger.error(f"Language detection failed: {e}")
+            return "en"  # Default to English on failure
     
-    def _simulate_transcription(
+    def _run_whisper_transcription(
         self,
         audio_path: Path,
+        language: str,
         progress_callback: Optional[Callable[[float, Optional[str]], None]] = None,
     ) -> List[TranscriptSegment]:
         """
-        Simulate transcription for testing purposes.
+        Run whisper.cpp on an audio file and parse the results.
         
         Args:
             audio_path: Path to the audio file
+            language: Language code (ISO 639-1)
             progress_callback: Callback for progress updates
             
         Returns:
             List of transcript segments
         """
-        # This is a placeholder that simulates transcription
-        # In a real implementation, this would be replaced with actual whisper.cpp calls
+        logger.info(f"Transcribing {audio_path} with language {language}")
         
-        # Simulate processing time
-        import time
-        import random
+        # Create a temporary file for JSON output
+        with tempfile.NamedTemporaryFile(suffix='.json', delete=False) as temp_file:
+            output_path = Path(temp_file.name)
         
-        # Get audio duration (simulated)
-        duration = 60.0  # Assume 1 minute of audio
-        
-        # Create some fake segments
-        segments = []
-        current_time = 0.0
-        
-        # Simulate 10 segments
-        for i in range(10):
-            # Update progress
-            progress = 0.2 + (0.8 * (i / 10))
-            if progress_callback:
-                progress_callback(progress, f"Processing segment {i+1}/10...")
+        try:
+            # Build command
+            cmd = [
+                self.whisper_binary,
+                "--model", str(self._model_path),
+                "--language", language,
+                "--output-json", str(output_path),
+                "--output-srt", "false",
+                "--output-txt", "false",
+                "--print-progress", "true",
+                "--beam-size", str(self.beam_size),
+                str(audio_path)
+            ]
             
-            # Simulate processing time
-            time.sleep(0.2)
+            # Add device-specific arguments
+            if self.device == "cuda":
+                cmd.extend(["--gpu", "0"])
+            elif self.device == "mps":
+                cmd.append("--use-mmap")
             
-            # Create a segment
-            segment_duration = random.uniform(2.0, 8.0)
-            segment = TranscriptSegment(
-                start=current_time,
-                end=current_time + segment_duration,
-                text=f"This is a simulated transcript segment {i+1}.",
-                confidence=random.uniform(0.8, 1.0),
+            logger.debug(f"Running command: {' '.join(cmd)}")
+            
+            # Run the command with real-time progress monitoring
+            process = subprocess.Popen(
+                cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                bufsize=1,
+                universal_newlines=True
             )
             
-            segments.append(segment)
-            current_time += segment_duration
-        
-        return segments
+            # Track progress
+            for line in iter(process.stdout.readline, ''):
+                # Try to parse progress information
+                if "progress" in line.lower():
+                    try:
+                        # Extract progress percentage
+                        progress_str = line.split(':')[1].strip().rstrip('%')
+                        progress = float(progress_str) / 100.0
+                        
+                        # Update progress (scale from 20% to 90%)
+                        if progress_callback:
+                            scaled_progress = 0.2 + (0.7 * progress)
+                            progress_callback(scaled_progress, f"Transcribing: {int(progress * 100)}%")
+                    except Exception:
+                        pass
+            
+            # Wait for process to complete
+            process.wait()
+            
+            # Check for errors
+            if process.returncode != 0:
+                stderr = process.stderr.read()
+                raise RuntimeError(f"Transcription failed with exit code {process.returncode}: {stderr}")
+            
+            # Parse the JSON output
+            if progress_callback:
+                progress_callback(0.9, "Processing results...")
+            
+            with open(output_path, 'r') as f:
+                try:
+                    data = json.load(f)
+                except json.JSONDecodeError:
+                    raise RuntimeError(f"Failed to parse JSON output from whisper.cpp")
+            
+            # Convert to transcript segments
+            segments = []
+            
+            if 'segments' in data:
+                for segment_data in data['segments']:
+                    segment = TranscriptSegment(
+                        start=segment_data.get('start', 0.0),
+                        end=segment_data.get('end', 0.0),
+                        text=segment_data.get('text', '').strip(),
+                        confidence=segment_data.get('confidence', 1.0),
+                    )
+                    segments.append(segment)
+            
+            logger.info(f"Transcription complete: {len(segments)} segments")
+            return segments
+            
+        except Exception as e:
+            logger.error(f"Error running whisper.cpp: {e}")
+            raise
+        finally:
+            # Clean up temporary file
+            if os.path.exists(output_path):
+                os.unlink(output_path)
     
     def close(self) -> None:
         """
@@ -419,11 +655,6 @@ class WhisperTranscriber:
         This method should be called when the transcriber is no longer needed
         to free up memory and other resources.
         """
-        if self._model is not None:
-            # This is a placeholder for the actual resource cleanup code
-            # In a real implementation, this would use the whisper.cpp bindings
-            # to free memory and release resources
-            
-            logger.info("Releasing Whisper model resources")
-            self._model = None
-            self._is_initialized = False
+        # No need to explicitly free resources when using subprocess approach
+        self._is_initialized = False
+        logger.info("Transcriber resources released")

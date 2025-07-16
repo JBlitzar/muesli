@@ -7,12 +7,47 @@ This module initializes the application, sets up logging, and handles command li
 
 import argparse
 import logging
+import signal
 import sys
 from pathlib import Path
 from typing import List, Optional
 
 from muesli.core.app import MuesliApp
 from muesli.core.config import AppConfig, load_config
+
+
+# Global application instance for signal handlers
+_app_instance = None
+
+
+def signal_handler(sig, frame):
+    """
+    Handle signals for graceful shutdown.
+    
+    Args:
+        sig: Signal number
+        frame: Current stack frame
+    """
+    logger = logging.getLogger(__name__)
+    signal_name = signal.Signals(sig).name
+    
+    logger.info(f"Received {signal_name}, shutting down gracefully...")
+    
+    # Clean up resources
+    if _app_instance is not None:
+        _app_instance.shutdown()
+    
+    sys.exit(0)
+
+
+def setup_signal_handlers():
+    """Register signal handlers for graceful shutdown."""
+    signal.signal(signal.SIGINT, signal_handler)   # Ctrl+C
+    signal.signal(signal.SIGTERM, signal_handler)  # Termination request
+    
+    # Handle SIGBREAK on Windows (Ctrl+Break)
+    if hasattr(signal, 'SIGBREAK'):
+        signal.signal(signal.SIGBREAK, signal_handler)
 
 
 def setup_logging(verbose: bool = False) -> None:
@@ -97,12 +132,20 @@ def main(args: Optional[List[str]] = None) -> int:
     Returns:
         Exit code (0 for success, non-zero for errors)
     """
+    global _app_instance
+    
     parsed_args = parse_args(args)
     
     # Set up logging
     setup_logging(parsed_args.verbose)
     logger = logging.getLogger(__name__)
     logger.info("Starting Muesli application")
+    
+    # Set up signal handlers
+    setup_signal_handlers()
+    
+    # Initialize the application
+    app = None
     
     try:
         # Load configuration
@@ -111,6 +154,7 @@ def main(args: Optional[List[str]] = None) -> int:
         
         # Initialize the application
         app = MuesliApp(config)
+        _app_instance = app  # Store globally for signal handlers
         
         if parsed_args.transcribe:
             # CLI mode: transcribe a single file
@@ -125,8 +169,9 @@ def main(args: Optional[List[str]] = None) -> int:
             
             if config.auto_summarize:
                 summary = app.summarize_transcript(result)
-                print("\nSummary:")
-                print(summary)
+                if summary:
+                    print("\nSummary:")
+                    print(summary.text)
             
             return 0
             
@@ -138,9 +183,18 @@ def main(args: Optional[List[str]] = None) -> int:
             logger.error("No action specified in headless mode")
             return 1
             
+    except KeyboardInterrupt:
+        logger.info("Interrupted by user, shutting down...")
+        return 0
     except Exception as e:
         logger.exception(f"Unhandled exception: {e}")
         return 1
+    finally:
+        # Clean up resources
+        if app is not None and app is not _app_instance:
+            # Only clean up if the app wasn't already cleaned up by signal handler
+            logger.info("Cleaning up resources...")
+            app.shutdown()
 
 
 if __name__ == "__main__":
