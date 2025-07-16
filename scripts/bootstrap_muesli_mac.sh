@@ -15,7 +15,7 @@
 #   ./scripts/bootstrap_muesli_mac.sh             # default medium model
 #   MODEL_SIZE=small ./scripts/bootstrap_muesli_mac.sh   # tiny|base|small|medium|large|large-v3
 #
-# Tested on: macOS 14 (Apple Silicon) & 13 (Intel)
+# Tested on: macOS 15.5 (Apple Silicon)
 # -------------------------------------------------------------
 set -Eeuo pipefail
 
@@ -122,4 +122,4 @@ cat <<EOF
   python main.py
 EOF
 
-log "Enjoy your breakfast."
+log "Enjoy your breakfast 🥣."
