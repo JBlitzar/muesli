@@ -9,13 +9,13 @@ Offline-first, privacy-centric voice **transcription** and **summarisation** des
 
 ## Features
 
-- 🎙️ Real-time microphone transcription with optional VAD
-- 📂 Drag-and-drop or “Open File” transcription for WAV / MP3 / M4A / FLAC / OGG
- - 🧠 Local LLM summarisation – generated automatically right after transcription
- - 📝 Single combined markdown view (summary **first**, transcript below a `---` separator)
- - 💾 Save combined content as **.md**, **.txt**, or **.srt** (auto-generated block)
+- 🎙️ Microphone transcription with whisper.cpp
+- 📂 “Open File” transcription for WAV / MP3 / M4A / FLAC / OGG
+- 🧠 Local LLM summarisation – generated automatically right after transcription
+- 📝 Single combined markdown view (summary **first**, transcript below a `---` separator)
+- 💾 Save combined content as **.md**, **.txt**, or **.srt** (auto-generated block)
 - 🌗 Dark / Light / System theme
-- 💻 Runs completely offline – network calls can be disabled in `config.yml`
+- 💻 Runs completely offline
 - 🪄 Single-executable build possible via `pyinstaller`
 
 ---
@@ -76,18 +76,17 @@ git clone https://github.com/ggml-org/whisper.cpp.git
 cd whisper.cpp
 cmake -B build
 cmake --build build -j --config Release
-# Add build/ (contains `main` / `whisper`) to your PATH, or move the binary
+# Rename build/bin/whisper-cli to just `whisper` and move somewhere in your PATH
 ```
 
 `Muesli` will auto-download the GGML model you choose (default **medium**).  
 You can also drop a file such as:
 
-- `ggml-medium.bin` **or**
 - `ggml-medium.en.bin`
 
 into `~/.muesli/models/whisper/` – the wrapper looks for both names.
 
-### 3. (Optional) Install Ollama
+### 3. (Required) Install Ollama
 
 ```bash
 curl https://ollama.ai/install.sh | sh
@@ -112,46 +111,6 @@ python main.py --transcribe path/to/audio.wav  # CLI mode
 2. Click **Open File** _or_ **Record**
 3. When you stop recording (or when file transcription ends) a summary is generated automatically and shown above the transcript.
 4. Save the combined markdown via **File → Save Content…**
-
-### Command-line shortcuts
-
-```
---no-ui              run headless
---config path.yml    custom configuration
---transcribe file    transcribe and print to stdout
--v / --verbose       debug logs
-```
-
-Environment variable overrides follow the pattern `MUESLI_SECTION_KEY=value`, e.g.
-
-```bash
-export MUESLI_TRANSCRIPTION_MODEL=small
-export MUESLI_LLM_PROVIDER=none
-```
-
----
-
-## Optional Configuration (`muesli.yml`)
-
-```yaml
-transcription:
-  model: medium # tiny / base / small / medium / large / large-v3
-  auto_language_detection: true
-llm:
-  provider: ollama
-  model_name: llama3:8b-instruct
-privacy:
-  allow_network: false
-ui:
-  theme: system
-```
-
-Place it in:
-
-- `./muesli.yml` (project root)
-- `~/.muesli/config.yml` (user)
-
-The application runs fine without any configuration file – sensible defaults are baked in.
 
 ---
 
