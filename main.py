@@ -246,7 +246,7 @@ class AppConfig(BaseModel):
     )
     
     auto_summarize: bool = Field(
-        default=False,
+        default=True,
         description="Automatically generate summary when transcription completes"
     )
     

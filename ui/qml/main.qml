@@ -19,7 +19,9 @@ ApplicationWindow {
     property bool isTranscribing: false
     property bool isSummarizing: false
     property bool hasTranscript: false
-    property bool hasSummary: false
+    property bool hasSummary: false       // kept for compatibility (may be unused)
+    // NEW: combined markdown/text shown in a single viewer
+    property string combinedContent: ""
     
     // Color scheme
     property color primaryColor: "#2c3e50"
@@ -110,141 +112,59 @@ ApplicationWindow {
             }
         }
         
-        // Main content area
-        SplitView {
+        // Main content area ‒ single combined view
+        Rectangle {
             Layout.fillWidth: true
             Layout.fillHeight: true
-            orientation: Qt.Vertical
-            
-            // Transcript area
-            Rectangle {
-                SplitView.preferredHeight: parent.height * 0.6
-                SplitView.minimumHeight: 100
-                color: cardColor
-                radius: 4
-                
-                ColumnLayout {
-                    anchors.fill: parent
-                    anchors.margins: 8
-                    spacing: 8
-                    
-                    // Transcript header
-                    RowLayout {
-                        Layout.fillWidth: true
-                        
-                        Label {
-                            text: "Transcript"
-                            font.pixelSize: 16
-                            font.bold: true
-                            color: textColor
-                        }
-                        
-                        Label {
-                            text: isTranscribing ? "Transcribing..." : (hasTranscript ? "Transcript ready" : "No transcript")
-                            color: lightTextColor
-                        }
-                        
-                        Item { Layout.fillWidth: true }
-                        
-                        // Transcript actions
-                        Button {
-                            text: "Save"
-                            enabled: hasTranscript
-                            onClicked: saveTranscriptRequested()
-                        }
+            color: cardColor
+            radius: 4
+
+            ColumnLayout {
+                anchors.fill: parent
+                anchors.margins: 8
+                spacing: 8
+
+                // Header
+                RowLayout {
+                    Layout.fillWidth: true
+
+                    Label {
+                        text: "Summary & Transcript"
+                        font.pixelSize: 16
+                        font.bold: true
+                        color: textColor
                     }
-                    
-                    // Transcript content
-                    ScrollView {
-                        Layout.fillWidth: true
-                        Layout.fillHeight: true
-                        
-                        TextArea {
-                            id: transcriptTextArea
-                            text: transcriptText
-                            readOnly: true
-                            wrapMode: TextEdit.Wrap
-                            font.pixelSize: 14
-                            background: Rectangle {
-                                color: "transparent"
-                            }
-                            
-                            // Placeholder text when empty
-                            Label {
-                                anchors.fill: parent
-                                text: "Transcript will appear here"
-                                color: lightTextColor
-                                visible: transcriptText.length === 0
-                                horizontalAlignment: Text.AlignHCenter
-                                verticalAlignment: Text.AlignVCenter
-                            }
-                        }
+
+                    Label {
+                        text: (isTranscribing ? "Transcribing..." :
+                               (isSummarizing ? "Summarizing..." :
+                                (hasTranscript ? "Content ready" : "No content")))
+                        color: lightTextColor
                     }
+
+                    Item { Layout.fillWidth: true }
                 }
-            }
-            
-            // Summary area
-            Rectangle {
-                SplitView.preferredHeight: parent.height * 0.4
-                SplitView.minimumHeight: 100
-                color: cardColor
-                radius: 4
-                
-                ColumnLayout {
-                    anchors.fill: parent
-                    anchors.margins: 8
-                    spacing: 8
-                    
-                    // Summary header
-                    RowLayout {
-                        Layout.fillWidth: true
-                        
+
+                // Combined content
+                ScrollView {
+                    Layout.fillWidth: true
+                    Layout.fillHeight: true
+
+                    TextArea {
+                        id: combinedTextArea
+                        text: combinedContent
+                        wrapMode: TextEdit.Wrap
+                        readOnly: true
+                        font.pixelSize: 14
+                        background: Rectangle { color: "transparent" }
+
                         Label {
-                            text: "Summary"
-                            font.pixelSize: 16
-                            font.bold: true
-                            color: textColor
-                        }
-                        
-                        Label {
-                            text: isSummarizing ? "Generating summary..." : (hasSummary ? "Summary ready" : "No summary")
+                            anchors.fill: parent
+                            text: "Summary and transcript will appear here"
                             color: lightTextColor
-                        }
-                        
-                        Item { Layout.fillWidth: true }
-                        
-                        // Summary actions
-                        Button {
-                            text: "Save"
-                            enabled: hasSummary
-                            onClicked: saveSummaryRequested()
-                        }
-                    }
-                    
-                    // Summary content
-                    ScrollView {
-                        Layout.fillWidth: true
-                        Layout.fillHeight: true
-                        
-                        TextArea {
-                            id: summaryTextArea
-                            text: summaryText
-                            readOnly: true
-                            wrapMode: TextEdit.Wrap
-                            font.pixelSize: 14
-                            background: Rectangle {
-                                color: "transparent"
-                            }
-                            
-                            // Placeholder text when empty
-                            Label {
-                                anchors.fill: parent
-                                text: "Summary will appear here"
-                                color: lightTextColor
-                                visible: summaryText.length === 0
-                                horizontalAlignment: Text.AlignHCenter
-                                verticalAlignment: Text.AlignVCenter
-                            }
+                            visible: combinedContent.length === 0
+                            horizontalAlignment: Text.AlignHCenter
+                            verticalAlignment: Text.AlignVCenter
                         }
                     }
                 }
@@ -291,7 +211,14 @@ ApplicationWindow {
     
     // Function to update transcript text from Python
     function updateTranscript(text) {
+        // Back-compat: still update transcriptText
         transcriptText = text
+        // If we already have a summary, prepend it with separator
+        if (summaryText.length > 0) {
+            combinedContent = summaryText + "\n\n---\n\n" + text
+        } else {
+            combinedContent = text
+        }
         hasTranscript = text.length > 0
     }
     
@@ -299,6 +226,12 @@ ApplicationWindow {
     function updateSummary(text) {
         summaryText = text
         hasSummary = text.length > 0
+        // Prepend summary, followed by separator and existing transcript
+        if (transcriptText.length > 0) {
+            combinedContent = text + "\n\n---\n\n" + transcriptText
+        } else {
+            combinedContent = text
+        }
     }
     
     // Function to update status from Python
