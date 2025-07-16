@@ -44,6 +44,9 @@ class MainWindow(QMainWindow):
         # Store reference to the application
         self.app = app
         
+        # Recording state flag
+        self._recording = False
+
         # Set window properties
         self.setWindowTitle(f"{app.config.app_name} v{app.config.app_version}")
         self.resize(1024, 768)
@@ -208,9 +211,10 @@ class MainWindow(QMainWindow):
         toolbar.addAction(open_action)
         
         # Record button
-        record_action = QAction("Record", self)
-        record_action.triggered.connect(self._on_record_audio)
-        toolbar.addAction(record_action)
+        # Keep reference so we can change its label later
+        self.record_action = QAction("Record", self)
+        self.record_action.triggered.connect(self._on_record_audio)
+        toolbar.addAction(self.record_action)
         
         toolbar.addSeparator()
         
@@ -284,11 +288,27 @@ class MainWindow(QMainWindow):
     def _on_record_audio(self):
         """Handle recording from microphone."""
         # Check if already recording
-        if hasattr(self, '_recording') and self._recording:
+        if self._recording:
             # Stop recording
             self.app.stop_streaming_transcription()
             self._recording = False
-            self.status_label.setText("Recording stopped")
+            # Restore record button text
+            if hasattr(self, "record_action"):
+                self.record_action.setText("Record")
+
+            # Attempt to fetch finalised transcript and update UI
+            transcript = self.app.get_transcript(self._active_transcript_id) if self._active_transcript_id else None
+            if transcript:
+                self.transcript_status.setText("Transcription complete")
+                self.status_label.setText("Transcription complete")
+                self.transcript_text.setText(transcript.text)
+                # Enable summarise button if LLM available
+                if hasattr(self.app, 'summarizer') and self.app.summarizer:
+                    self.summarize_button.setEnabled(True)
+            else:
+                # Fallback UI update
+                self.status_label.setText("Recording stopped")
+                self.transcript_status.setText("Processing recording...")
             return
         
         try:
@@ -306,6 +326,9 @@ class MainWindow(QMainWindow):
             
             # Set recording flag
             self._recording = True
+            # Update record button text
+            if hasattr(self, "record_action"):
+                self.record_action.setText("Stop Recording")
             
         except Exception as e:
             logger.error(f"Error starting recording: {e}")

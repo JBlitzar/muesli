@@ -159,6 +159,26 @@ class Transcript(BaseModel):
     
     # No segment-level operations are needed for plain-text transcripts.
 
+    # ------------------------------------------------------------------
+    # Compatibility helpers
+    # ------------------------------------------------------------------
+
+    def to_srt(self) -> str:
+        """Return the transcript in SubRip (SRT) format.
+
+        The old implementation produced multiple timed segments.  Since the new
+        model stores only full-text, we emit a single subtitle block that spans
+        an hour (00:00:00,000 → 01:00:00,000).  This keeps the existing “Save
+        as SRT” menu action functional without re-introducing segment logic.
+        """
+        srt_lines = [
+            "1",
+            "00:00:00,000 --> 01:00:00,000",
+            self.text.strip(),
+            "",  # trailing blank line required by SRT spec
+        ]
+        return "\n".join(srt_lines)
+
 
 class SummaryType(str, enum.Enum):
     """Types of summaries that can be generated."""

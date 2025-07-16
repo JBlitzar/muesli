@@ -6,7 +6,7 @@ using the Ollama LLM client.
 """
 
 import logging
-from typing import Dict, List, Optional, Union
+from typing import Optional, Union
 
 from models import Summary, SummaryType, Transcript
 from ollama_client import OllamaClient
@@ -97,11 +97,10 @@ class TranscriptSummarizer:
         Raises:
             ValueError: If the transcript is empty
         """
-        # Get transcript text
-        if isinstance(transcript, Transcript):
-            transcript_text = transcript.text
-        else:
-            transcript_text = transcript
+        # Extract raw text from the transcript input
+        transcript_text = (
+            transcript.text if isinstance(transcript, Transcript) else str(transcript)
+        )
         
         # Check if transcript is empty
         if not transcript_text or transcript_text.strip() == "":
@@ -139,6 +138,10 @@ class TranscriptSummarizer:
             logger.info(f"Generated summary of length {len(summary_text)}")
             return summary_text
             
+        # Catch errors from the LLM client (including subprocess failures)
+        except RuntimeError as e:
+            logger.error(f"LLM generation failed: {e}")
+            raise
         except Exception as e:
             logger.error(f"Failed to generate summary: {e}")
             raise RuntimeError(f"Failed to generate summary: {e}")

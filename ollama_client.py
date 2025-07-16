@@ -1,35 +1,29 @@
 """
 Ollama client for the Muesli application.
 
-This module provides a client for interacting with a local Ollama server
+This module provides a client for interacting with a local Ollama installation
 for LLM capabilities, such as generating text completions for summarization.
 """
 
-import json
 import logging
+import subprocess
+import shlex
 from typing import Dict, Iterator, Optional, Union
-
-try:
-    import httpx
-    HTTPX_AVAILABLE = True
-except ImportError:
-    HTTPX_AVAILABLE = False
-    logging.warning("httpx not available. Ollama client will not work.")
 
 logger = logging.getLogger(__name__)
 
 
 class OllamaClient:
     """
-    Client for interacting with a local Ollama server.
+    Client for interacting with a local Ollama installation.
     
     This class provides methods for generating text completions using
-    a local Ollama server.
+    the Ollama CLI directly via subprocess.
     """
     
     def __init__(
         self,
-        base_url: str = "http://localhost:11434",
+        base_url: str = "http://localhost:11434",  # Kept for API compatibility
         model_name: str = "llama3:8b-instruct",
         offline_mode: bool = True,
     ):
@@ -37,43 +31,44 @@ class OllamaClient:
         Initialize the Ollama client.
         
         Args:
-            base_url: Base URL of the Ollama server
+            base_url: Ignored (kept for API compatibility)
             model_name: Name of the model to use
             offline_mode: Whether to run in offline mode (no network access)
         """
-        self.base_url = base_url
         self.model_name = model_name
         self.offline_mode = offline_mode
         
-        # Check if httpx is available
-        if not HTTPX_AVAILABLE:
-            raise ImportError(
-                "httpx library not available. Please install it with 'pip install httpx'"
-            )
-        
-        # Create HTTP client
-        self._client = httpx.Client(timeout=60.0)
+        # Verify Ollama is installed
+        self._verify_installation()
         
         logger.info(f"Initialized Ollama client for model {model_name}")
-        
-        # Verify connection to Ollama server
-        self._verify_connection()
     
-    def _verify_connection(self) -> None:
+    def _verify_installation(self) -> None:
         """
-        Verify connection to the Ollama server.
+        Verify Ollama is installed and accessible.
         
         Raises:
-            ConnectionError: If the connection to the Ollama server fails
+            RuntimeError: If Ollama is not installed or accessible
         """
         try:
-            response = self._client.get(f"{self.base_url}/api/version")
-            response.raise_for_status()
-            version_info = response.json()
-            logger.info(f"Connected to Ollama server version {version_info.get('version', 'unknown')}")
+            result = subprocess.run(
+                ["ollama", "list"], 
+                capture_output=True, 
+                text=True, 
+                check=False
+            )
+            
+            if result.returncode != 0:
+                raise RuntimeError(f"Ollama command failed: {result.stderr}")
+                
+            logger.info("Ollama installation verified")
+            
+        except FileNotFoundError:
+            logger.error("Ollama not found. Please install Ollama.")
+            raise RuntimeError("Ollama not found. Please install Ollama.")
         except Exception as e:
-            logger.error(f"Failed to connect to Ollama server at {self.base_url}: {e}")
-            raise ConnectionError(f"Failed to connect to Ollama server: {e}")
+            logger.error(f"Failed to verify Ollama installation: {e}")
+            raise RuntimeError(f"Failed to verify Ollama installation: {e}")
     
     def generate(
         self,
@@ -99,50 +94,55 @@ class OllamaClient:
         Raises:
             RuntimeError: If generation fails
         """
-        # Prepare request payload
-        payload = {
-            "model": self.model_name,
-            "prompt": prompt,
-            "temperature": temperature,
-            "num_predict": max_tokens,
-            "stream": stream,
-        }
+        # Build the command
+        cmd = ["ollama", "run"]
         
-        # Add system prompt if provided
+        # Add model name
+        cmd.append(self.model_name)
+        
+        # Add parameters
         if system_prompt:
-            payload["system"] = system_prompt
+            cmd.extend(["--system", system_prompt])
+        
+        cmd.extend(["--temperature", str(temperature)])
+        cmd.extend(["--num-predict", str(max_tokens)])
         
         # Add offline mode if enabled
         if self.offline_mode:
-            payload["options"] = {"num_ctx": 2048, "offline": True}
+            cmd.append("--nowordwrap")  # Prevent word wrapping in output
+        
+        # Add the prompt (must be last argument)
+        cmd.append(prompt)
+        
+        logger.debug(f"Executing command: {' '.join(cmd)}")
         
         try:
-            # Send request to Ollama server
-            url = f"{self.base_url}/api/generate"
-            
             if stream:
-                # Return streaming iterator
-                return self._stream_generate(url, payload)
+                return self._stream_generate(cmd)
             else:
-                # Send non-streaming request
-                response = self._client.post(url, json=payload)
-                response.raise_for_status()
+                # For non-streaming, capture all output at once
+                result = subprocess.run(
+                    cmd,
+                    capture_output=True,
+                    text=True,
+                    check=True
+                )
+                return result.stdout.strip()
                 
-                # Parse response
-                result = response.json()
-                return result.get("response", "")
-                
+        except subprocess.CalledProcessError as e:
+            error_msg = f"Ollama command failed (code {e.returncode}): {e.stderr}"
+            logger.error(error_msg)
+            raise RuntimeError(error_msg)
         except Exception as e:
             logger.error(f"Failed to generate text: {e}")
             raise RuntimeError(f"Failed to generate text: {e}")
     
-    def _stream_generate(self, url: str, payload: Dict) -> Iterator[str]:
+    def _stream_generate(self, cmd: list) -> Iterator[str]:
         """
         Stream text generation from Ollama.
         
         Args:
-            url: API URL
-            payload: Request payload
+            cmd: Command list to execute
             
         Yields:
             Text chunks as they are generated
@@ -151,21 +151,26 @@ class OllamaClient:
             RuntimeError: If streaming fails
         """
         try:
-            with self._client.stream("POST", url, json=payload, timeout=120.0) as response:
-                response.raise_for_status()
-                
-                # Process streaming response
-                for line in response.iter_lines():
-                    if not line:
-                        continue
-                    
-                    try:
-                        data = json.loads(line)
-                        chunk = data.get("response", "")
-                        if chunk:
-                            yield chunk
-                    except json.JSONDecodeError:
-                        logger.warning(f"Failed to parse JSON from Ollama: {line}")
+            # Start the process
+            process = subprocess.Popen(
+                cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                bufsize=1,  # Line buffered
+                universal_newlines=True
+            )
+            
+            # Read output line by line
+            for line in process.stdout:
+                yield line.rstrip('\n')
+            
+            # Check for any errors after process completes
+            return_code = process.wait()
+            if return_code != 0:
+                stderr = process.stderr.read()
+                logger.error(f"Ollama command failed (code {return_code}): {stderr}")
+                raise RuntimeError(f"Ollama command failed: {stderr}")
                 
         except Exception as e:
             logger.error(f"Error during streaming generation: {e}")
@@ -173,7 +178,7 @@ class OllamaClient:
     
     def check_model_availability(self, model_name: Optional[str] = None) -> bool:
         """
-        Check if a model is available on the Ollama server.
+        Check if a model is available on the local Ollama installation.
         
         Args:
             model_name: Name of the model to check (defaults to the client's model)
@@ -184,26 +189,20 @@ class OllamaClient:
         model = model_name or self.model_name
         
         try:
-            response = self._client.get(f"{self.base_url}/api/tags")
-            response.raise_for_status()
+            result = subprocess.run(
+                ["ollama", "list"],
+                capture_output=True,
+                text=True,
+                check=True
+            )
             
-            # Parse response
-            result = response.json()
-            models = result.get("models", [])
-            
-            # Check if model exists
-            for model_info in models:
-                if model_info.get("name") == model:
-                    return True
-            
-            return False
+            # Check if model exists in the output
+            return model in result.stdout
             
         except Exception as e:
             logger.error(f"Failed to check model availability: {e}")
             return False
     
     def close(self) -> None:
-        """Close the client and release resources."""
-        if hasattr(self, '_client'):
-            self._client.close()
-            logger.debug("Ollama client closed")
+        """Close the client and release resources (no-op for subprocess approach)."""
+        logger.debug("Ollama client closed")
