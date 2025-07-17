@@ -18,6 +18,8 @@
 # Tested on: macOS 15.5 (Apple Silicon)
 # -------------------------------------------------------------
 set -Eeuo pipefail
+# Prevent macOS from sleeping during bootstrap
+caffeinate -d -i -w $$ &
 
 APP_NAME="Muesli"
 PYTHON_BIN="${PYTHON_BIN:-python3}"
