@@ -117,6 +117,7 @@ git clone https://github.com/JBlitzar/muesli
 bash scripts/bootstrap_muesli_mac.sh
 black .       # format
 isort .       # import order
+ruff format . # format, again
 ```
 
 ---
