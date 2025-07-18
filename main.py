@@ -344,6 +344,8 @@ class Transcript(BaseModel):
 
     text: str = Field(default_factory=str, description="Full transcript text")
 
+    notes: str = Field(default_factory=str, description="User notes entered during recording")
+
     language: str = Field(
         default="en", description="Detected or specified language code (ISO 639-1)"
     )
@@ -836,6 +838,24 @@ class MuesliApp(QObject):
         """
         with self._lock:
             return self._active_transcripts.get(transcript_id)
+
+    def update_transcript_notes(self, transcript_id: str, notes: str) -> bool:
+        """
+        Update notes for a transcript.
+
+        Args:
+            transcript_id: ID of the transcript
+            notes: Notes text to update
+
+        Returns:
+            True if successful, False if transcript not found
+        """
+        with self._lock:
+            transcript = self._active_transcripts.get(transcript_id)
+            if transcript:
+                transcript.notes = notes
+                return True
+            return False
 
     # Summarization methods
 

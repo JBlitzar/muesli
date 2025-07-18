@@ -29,6 +29,16 @@ class TranscriptSummarizer:
         "Summary:"
     )
 
+    # Template for when notes are provided
+    NOTES_PROMPT_TEMPLATE = (
+        "Below is a transcript of an audio recording along with notes taken during the session. "
+        "Please provide a concise summary of the key points discussed, giving special attention to "
+        "the user notes as they highlight important topics that should be elaborated upon:\n\n"
+        "TRANSCRIPT:\n{transcript}\n\n"
+        "USER NOTES:\n{notes}\n\n"
+        "Summary:"
+    )
+
     SUMMARY_TYPE_PROMPTS = {
         SummaryType.BULLET_POINTS: (
             "Below is a transcript of an audio recording. "
@@ -52,6 +62,42 @@ class TranscriptSummarizer:
             "Below is a transcript of an audio recording. "
             "Please provide a detailed summary that captures all significant points and nuances:\n\n"
             "{transcript}\n\n"
+            "Detailed Summary:"
+        ),
+    }
+
+    # Summary type prompts with notes
+    SUMMARY_TYPE_PROMPTS_WITH_NOTES = {
+        SummaryType.BULLET_POINTS: (
+            "Below is a transcript of an audio recording along with notes taken during the session. "
+            "Please provide a summary of the key points in bullet point format, giving special attention to "
+            "the user notes as they highlight important topics:\n\n"
+            "TRANSCRIPT:\n{transcript}\n\n"
+            "USER NOTES:\n{notes}\n\n"
+            "Summary (bullet points):"
+        ),
+        SummaryType.PARAGRAPH: (
+            "Below is a transcript of an audio recording along with notes taken during the session. "
+            "Please provide a concise paragraph summary of the key points discussed, giving special attention to "
+            "the user notes as they highlight important topics:\n\n"
+            "TRANSCRIPT:\n{transcript}\n\n"
+            "USER NOTES:\n{notes}\n\n"
+            "Summary (paragraph):"
+        ),
+        SummaryType.EXECUTIVE: (
+            "Below is a transcript of an audio recording along with notes taken during the session. "
+            "Please provide a brief executive summary (2-3 sentences) of the most important points, giving special attention to "
+            "the user notes as they highlight important topics:\n\n"
+            "TRANSCRIPT:\n{transcript}\n\n"
+            "USER NOTES:\n{notes}\n\n"
+            "Executive Summary:"
+        ),
+        SummaryType.DETAILED: (
+            "Below is a transcript of an audio recording along with notes taken during the session. "
+            "Please provide a detailed summary that captures all significant points and nuances, giving special attention to "
+            "the user notes as they highlight important topics:\n\n"
+            "TRANSCRIPT:\n{transcript}\n\n"
+            "USER NOTES:\n{notes}\n\n"
             "Detailed Summary:"
         ),
     }
@@ -97,10 +143,13 @@ class TranscriptSummarizer:
         Raises:
             ValueError: If the transcript is empty
         """
-        # Extract raw text from the transcript input
-        transcript_text = (
-            transcript.text if hasattr(transcript, "text") else str(transcript)
-        )
+        # Extract raw text and notes from the transcript input
+        if hasattr(transcript, "text"):
+            transcript_text = transcript.text
+            notes = getattr(transcript, "notes", "")
+        else:
+            transcript_text = str(transcript)
+            notes = ""
 
         # Check if transcript is empty
         if not transcript_text or transcript_text.strip() == "":
@@ -109,12 +158,22 @@ class TranscriptSummarizer:
         # Get prompt template based on summary type
         template = prompt_template
         if template is None and summary_type is not None:
-            template = self.SUMMARY_TYPE_PROMPTS.get(summary_type, self.prompt_template)
+            # Use notes-aware template if notes are available
+            if notes and notes.strip():
+                template = self.SUMMARY_TYPE_PROMPTS_WITH_NOTES.get(summary_type, self.NOTES_PROMPT_TEMPLATE)
+            else:
+                template = self.SUMMARY_TYPE_PROMPTS.get(summary_type, self.prompt_template)
         elif template is None:
             template = self.prompt_template
 
-        # Format prompt with transcript
-        prompt = template.format(transcript=transcript_text)
+        # Format prompt with transcript and notes
+        if notes and notes.strip():
+            # Use notes-specific template if available
+            if hasattr(self, 'NOTES_PROMPT_TEMPLATE') and template == self.prompt_template:
+                template = self.NOTES_PROMPT_TEMPLATE
+            prompt = template.format(transcript=transcript_text, notes=notes)
+        else:
+            prompt = template.format(transcript=transcript_text)
 
         # Generate summary
         logger.info(

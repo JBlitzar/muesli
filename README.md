@@ -137,7 +137,7 @@ whisper -m ggml-medium.en.bin \
         --beam-size 5
 ```
 
-## Muesli internally generates a similar command; use it as a reference when debugging.
+> Muesli internally generates a similar command; use it as a reference when debugging. I used it as a reference when debugging, at least.
 
 ## License
 

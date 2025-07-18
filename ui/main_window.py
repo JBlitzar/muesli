@@ -229,6 +229,68 @@ class MainWindow(QMainWindow):
 
         main_layout.addWidget(text_container)
 
+        # ----- Notes input area -----
+        self.notes_container = QWidget()
+        self.notes_container.setStyleSheet(
+            f"""
+            QWidget {{
+                background-color: {BACKGROUND_COLOR};
+                border: 1px solid {BORDER_COLOR};
+                border-radius: 12px;
+            }}
+        """
+        )
+
+        notes_layout = QVBoxLayout(self.notes_container)
+        notes_layout.setContentsMargins(2, 2, 2, 2)
+
+        # Notes header
+        notes_header = QLabel("Notes (Available during recording)")
+        notes_header.setFont(QFont("Geist", 14, QFont.Bold))
+        notes_header.setStyleSheet(f"color: {TEXT_COLOR}; padding: 8px;")
+        notes_layout.addWidget(notes_header)
+
+        # Notes text area
+        self.notes_text = QTextEdit()
+        self.notes_text.setFont(QFont("Geist", 16))
+        self.notes_text.setMaximumHeight(150)  # Limit height to keep it compact
+        self.notes_text.setStyleSheet(
+            f"""
+            QTextEdit {{
+                background-color: {BACKGROUND_COLOR};
+                border: 1px solid {BORDER_COLOR};
+                border-radius: 8px;
+                padding: 12px;
+                color: {TEXT_COLOR};
+                selection-background-color: #3498db;
+                selection-color: white;
+            }}
+            QScrollBar:vertical {{
+                background-color: {SCROLL_BAR_BACKGROUND};
+                border: none;
+                border-radius: 6px;
+                width: 12px;
+                margin: 0;
+            }}
+            QScrollBar::handle:vertical {{
+                background-color: {ACCENT_COLOR};
+                border-radius: 6px;
+                min-height: 20px;
+            }}
+            QScrollBar::handle:vertical:hover {{
+                background-color: #c7c2b4;
+            }}
+        """
+        )
+        self.notes_text.setPlaceholderText("Type your notes here during recording...")
+        self.notes_text.setEnabled(False)  # Disabled by default
+        notes_layout.addWidget(self.notes_text)
+
+        # Connect notes text changes to update transcript
+        self.notes_text.textChanged.connect(self._on_notes_changed)
+
+        main_layout.addWidget(self.notes_container)
+
         # Holds latest markdown so we can save exact content
         self._combined_markdown: str = ""
 
@@ -676,41 +738,51 @@ class MainWindow(QMainWindow):
                 wrapped_lines.append("")  # Preserve empty lines
         return "\n".join(wrapped_lines)
 
-    def _update_combined_content(self, transcript_text="", summary_text=""):
+    def _update_combined_content(self, transcript_text="", summary_text="", notes_text=""):
         """
-        Update the combined content with summary and transcript.
+        Update the combined content with summary, transcript, and notes.
 
         Args:
             transcript_text: The transcript text
             summary_text: The summary text (markdown)
+            notes_text: The notes text
         """
         # Apply 65 character line wrapping to transcript
         wrapped_transcript = self._wrap_text(transcript_text, width=65)
 
-        # Store raw content for saving (use unwrapped text for saving)
+        # Include notes in the raw content for saving
+        content_parts = []
         if summary_text:
-            self._combined_markdown = f"{summary_text}\n\n---\n\n{transcript_text}"
-        else:
-            self._combined_markdown = transcript_text
+            content_parts.append(summary_text)
+        if notes_text:
+            content_parts.append(f"## Notes\n\n{notes_text}")
+        if transcript_text:
+            content_parts.append(f"## Transcript\n\n{transcript_text}")
+
+        # Store raw content for saving (use unwrapped text for saving)
+        self._combined_markdown = "\n\n---\n\n".join(content_parts)
 
         # Convert markdown to plain text for better font rendering
+        display_parts = []
+        
         if summary_text:
             # Simple markdown to plain text conversion
             plain_summary = self._markdown_to_plain_text(summary_text)
-
-            # Wrap the summary text as well
             wrapped_summary = self._wrap_text(plain_summary, width=65)
+            display_parts.append(wrapped_summary)
 
-            # Create the combined plain text content
-            combined_content = (
-                f"{wrapped_summary}\n\n{'─' * 65}\n\n{wrapped_transcript}"
-            )
+        if notes_text:
+            wrapped_notes = self._wrap_text(f"NOTES:\n{notes_text}", width=65)
+            display_parts.append(wrapped_notes)
 
-            # Set as plain text to avoid font rendering issues
-            self.combined_text.setPlainText(combined_content)
-        else:
-            # Just plain text for transcript only (wrapped)
-            self.combined_text.setPlainText(wrapped_transcript)
+        if transcript_text:
+            display_parts.append(f"TRANSCRIPT:\n{wrapped_transcript}")
+
+        # Create the combined plain text content
+        combined_content = f"\n\n{'─' * 65}\n\n".join(display_parts)
+
+        # Set as plain text to avoid font rendering issues
+        self.combined_text.setPlainText(combined_content)
 
     def _markdown_to_plain_text(self, markdown_text: str) -> str:
         """
@@ -823,6 +895,9 @@ class MainWindow(QMainWindow):
             if hasattr(self, "record_action"):
                 self.record_action.setText("Record")
 
+            # Disable notes input
+            self.notes_text.setEnabled(False)
+
             # Attempt to fetch finalised transcript and update UI
             transcript = (
                 self.app.get_transcript(self._active_transcript_id)
@@ -834,7 +909,10 @@ class MainWindow(QMainWindow):
                 self.status_label.setText("Transcription complete")
 
                 # Update the combined text with transcript
-                self._update_combined_content(transcript_text=transcript.text)
+                self._update_combined_content(
+                    transcript_text=transcript.text,
+                    notes_text=getattr(transcript, 'notes', '')
+                )
 
                 # Auto-summarize if LLM is available
                 if hasattr(self.app, "summarizer") and self.app.summarizer:
@@ -856,6 +934,10 @@ class MainWindow(QMainWindow):
             self.combined_text.clear()
             self._combined_markdown = ""
             self.summary_status.setText("No summary generated")
+
+            # Enable notes input for recording
+            self.notes_text.setEnabled(True)
+            self.notes_text.clear()
 
             # Set recording flag
             self._recording = True
@@ -977,6 +1059,11 @@ class MainWindow(QMainWindow):
     def _start_summarization(self, transcript):
         """Start summarization in the app."""
         try:
+            # Make sure notes are saved to the transcript before summarization
+            if self._active_transcript_id and hasattr(self, 'notes_text'):
+                current_notes = self.notes_text.toPlainText()
+                self.app.update_transcript_notes(self._active_transcript_id, current_notes)
+                
             # Use app's summarize_transcript method
             summary = self.app.summarize_transcript(transcript)
             if summary:
@@ -1068,7 +1155,10 @@ class MainWindow(QMainWindow):
         transcript = self.app.get_transcript(transcript_id)
         if transcript:
             # Update the combined text with transcript only during progress
-            self._update_combined_content(transcript_text=transcript.text)
+            self._update_combined_content(
+                transcript_text=transcript.text,
+                notes_text=getattr(transcript, 'notes', '')
+            )
 
             # Auto-scroll to bottom
             if self.app.config.ui.auto_scroll:
@@ -1097,7 +1187,10 @@ class MainWindow(QMainWindow):
         self._show_loading(False)  # Hide loading animation
 
         # Update the combined text with transcript
-        self._update_combined_content(transcript_text=transcript.text)
+        self._update_combined_content(
+            transcript_text=transcript.text,
+            notes_text=getattr(transcript, 'notes', '')
+        )
 
         # Auto-summarize if configured and LLM is available
         if (
@@ -1156,7 +1249,9 @@ class MainWindow(QMainWindow):
 
         # Update the combined text with summary and transcript
         self._update_combined_content(
-            transcript_text=transcript.text, summary_text=summary.text
+            transcript_text=transcript.text, 
+            summary_text=summary.text,
+            notes_text=getattr(transcript, 'notes', '')
         )
 
     @Slot(str, str)
@@ -1180,3 +1275,9 @@ class MainWindow(QMainWindow):
 
         # Accept the close event
         event.accept()
+
+    def _on_notes_changed(self):
+        """Handle notes text changes."""
+        if self._active_transcript_id and self._recording:
+            notes_text = self.notes_text.toPlainText()
+            self.app.update_transcript_notes(self._active_transcript_id, notes_text)
