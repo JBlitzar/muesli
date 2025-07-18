@@ -113,6 +113,8 @@ python main.py
 ## Development
 
 ```bash
+git clone https://github.com/JBlitzar/muesli
+bash scripts/bootstrap_muesli_mac.sh
 black .       # format
 isort .       # import order
 ```
@@ -121,7 +123,7 @@ isort .       # import order
 
 ## Troubleshooting
 
-_Haha, good luck. This project is a mess. But check the traceback. It's pretty well structured._
+_Haha, good luck. This project is kind of a mess. But check the traceback. It's pretty well structured. If it is reproducable and would be helpful, feel free to leave an issue and I'll try my best to respond and update this section_
 
 ### whisper.cpp CLI cheat-sheet
 
