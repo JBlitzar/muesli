@@ -160,16 +160,23 @@ class TranscriptSummarizer:
         if template is None and summary_type is not None:
             # Use notes-aware template if notes are available
             if notes and notes.strip():
-                template = self.SUMMARY_TYPE_PROMPTS_WITH_NOTES.get(summary_type, self.NOTES_PROMPT_TEMPLATE)
+                template = self.SUMMARY_TYPE_PROMPTS_WITH_NOTES.get(
+                    summary_type, self.NOTES_PROMPT_TEMPLATE
+                )
             else:
-                template = self.SUMMARY_TYPE_PROMPTS.get(summary_type, self.prompt_template)
+                template = self.SUMMARY_TYPE_PROMPTS.get(
+                    summary_type, self.prompt_template
+                )
         elif template is None:
             template = self.prompt_template
 
         # Format prompt with transcript and notes
         if notes and notes.strip():
             # Use notes-specific template if available
-            if hasattr(self, 'NOTES_PROMPT_TEMPLATE') and template == self.prompt_template:
+            if (
+                hasattr(self, "NOTES_PROMPT_TEMPLATE")
+                and template == self.prompt_template
+            ):
                 template = self.NOTES_PROMPT_TEMPLATE
             prompt = template.format(transcript=transcript_text, notes=notes)
         else:

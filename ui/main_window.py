@@ -738,7 +738,9 @@ class MainWindow(QMainWindow):
                 wrapped_lines.append("")  # Preserve empty lines
         return "\n".join(wrapped_lines)
 
-    def _update_combined_content(self, transcript_text="", summary_text="", notes_text=""):
+    def _update_combined_content(
+        self, transcript_text="", summary_text="", notes_text=""
+    ):
         """
         Update the combined content with summary, transcript, and notes.
 
@@ -764,7 +766,7 @@ class MainWindow(QMainWindow):
 
         # Convert markdown to plain text for better font rendering
         display_parts = []
-        
+
         if summary_text:
             # Simple markdown to plain text conversion
             plain_summary = self._markdown_to_plain_text(summary_text)
@@ -911,7 +913,7 @@ class MainWindow(QMainWindow):
                 # Update the combined text with transcript
                 self._update_combined_content(
                     transcript_text=transcript.text,
-                    notes_text=getattr(transcript, 'notes', '')
+                    notes_text=getattr(transcript, "notes", ""),
                 )
 
                 # Auto-summarize if LLM is available
@@ -1060,10 +1062,12 @@ class MainWindow(QMainWindow):
         """Start summarization in the app."""
         try:
             # Make sure notes are saved to the transcript before summarization
-            if self._active_transcript_id and hasattr(self, 'notes_text'):
+            if self._active_transcript_id and hasattr(self, "notes_text"):
                 current_notes = self.notes_text.toPlainText()
-                self.app.update_transcript_notes(self._active_transcript_id, current_notes)
-                
+                self.app.update_transcript_notes(
+                    self._active_transcript_id, current_notes
+                )
+
             # Use app's summarize_transcript method
             summary = self.app.summarize_transcript(transcript)
             if summary:
@@ -1157,7 +1161,7 @@ class MainWindow(QMainWindow):
             # Update the combined text with transcript only during progress
             self._update_combined_content(
                 transcript_text=transcript.text,
-                notes_text=getattr(transcript, 'notes', '')
+                notes_text=getattr(transcript, "notes", ""),
             )
 
             # Auto-scroll to bottom
@@ -1188,8 +1192,7 @@ class MainWindow(QMainWindow):
 
         # Update the combined text with transcript
         self._update_combined_content(
-            transcript_text=transcript.text,
-            notes_text=getattr(transcript, 'notes', '')
+            transcript_text=transcript.text, notes_text=getattr(transcript, "notes", "")
         )
 
         # Auto-summarize if configured and LLM is available
@@ -1249,9 +1252,9 @@ class MainWindow(QMainWindow):
 
         # Update the combined text with summary and transcript
         self._update_combined_content(
-            transcript_text=transcript.text, 
+            transcript_text=transcript.text,
             summary_text=summary.text,
-            notes_text=getattr(transcript, 'notes', '')
+            notes_text=getattr(transcript, "notes", ""),
         )
 
     @Slot(str, str)

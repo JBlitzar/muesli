@@ -344,7 +344,9 @@ class Transcript(BaseModel):
 
     text: str = Field(default_factory=str, description="Full transcript text")
 
-    notes: str = Field(default_factory=str, description="User notes entered during recording")
+    notes: str = Field(
+        default_factory=str, description="User notes entered during recording"
+    )
 
     language: str = Field(
         default="en", description="Detected or specified language code (ISO 639-1)"
