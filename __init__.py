@@ -10,24 +10,23 @@ __version__ = "0.1.0"
 # Import main components to make them available at package level
 from main import MuesliApp, main
 from models import (
-    AudioFile, 
-    Transcript, 
-    TranscriptSegment, 
-    Summary, 
+    AudioFile,
+    AudioFormat,
+    Summary,
     SummaryType,
-    AudioFormat
+    Transcript,
+    TranscriptSegment,
 )
-from whisper_wrapper import WhisperTranscriber, WhisperModelSize
 from ollama_client import OllamaClient
-from summarizer import TranscriptSummarizer
 from stream_processor import TranscriptionStreamProcessor
+from summarizer import TranscriptSummarizer
+from whisper_wrapper import WhisperModelSize, WhisperTranscriber
 
 # Export public API
 __all__ = [
     # Main application
     "MuesliApp",
     "main",
-    
     # Data models
     "AudioFile",
     "Transcript",
@@ -35,7 +34,6 @@ __all__ = [
     "Summary",
     "SummaryType",
     "AudioFormat",
-    
     # Components
     "WhisperTranscriber",
     "WhisperModelSize",

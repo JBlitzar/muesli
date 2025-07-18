@@ -2,9 +2,9 @@
 name = "muesli"
 version = "0.1.0"
 description = "Offline-first, privacy-centric voice transcription and summarization desktop application"
-authors = ["Your Name <your.email@example.com>"]
+authors = ["JBlitzar"]
 readme = "README.md"
-license = "MIT"
+license = "GNU GPLv3"
 repository = "https://github.com/JBlitzar/muesli"
 # project is now a flat layout (top-level modules + “ui” package)
 # explicitly include the UI package so Poetry has at least one package to ship

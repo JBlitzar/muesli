@@ -17,18 +17,18 @@ logger = logging.getLogger(__name__)
 class TranscriptSummarizer:
     """
     Generates summaries of transcripts using an LLM.
-    
+
     This class provides methods for generating different types of summaries
     from transcripts using the Ollama LLM client.
     """
-    
+
     DEFAULT_PROMPT_TEMPLATE = (
         "Below is a transcript of an audio recording. "
         "Please provide a concise summary of the key points discussed:\n\n"
         "{transcript}\n\n"
         "Summary:"
     )
-    
+
     SUMMARY_TYPE_PROMPTS = {
         SummaryType.BULLET_POINTS: (
             "Below is a transcript of an audio recording. "
@@ -55,7 +55,7 @@ class TranscriptSummarizer:
             "Detailed Summary:"
         ),
     }
-    
+
     def __init__(
         self,
         llm_client: OllamaClient,
@@ -63,16 +63,16 @@ class TranscriptSummarizer:
     ):
         """
         Initialize the transcript summarizer.
-        
+
         Args:
             llm_client: Ollama client for LLM capabilities
             prompt_template: Custom prompt template for summarization
         """
         self.llm_client = llm_client
         self.prompt_template = prompt_template or self.DEFAULT_PROMPT_TEMPLATE
-        
+
         logger.info("Transcript summarizer initialized")
-    
+
     def summarize(
         self,
         transcript: Union[Transcript, str],
@@ -83,17 +83,17 @@ class TranscriptSummarizer:
     ) -> str:
         """
         Generate a summary of a transcript.
-        
+
         Args:
             transcript: Transcript object or transcript text
             summary_type: Type of summary to generate
             prompt_template: Custom prompt template (overrides default)
             temperature: Sampling temperature for generation
             max_tokens: Maximum tokens to generate
-            
+
         Returns:
             Generated summary text
-            
+
         Raises:
             ValueError: If the transcript is empty
         """
@@ -101,31 +101,32 @@ class TranscriptSummarizer:
         transcript_text = (
             transcript.text if hasattr(transcript, "text") else str(transcript)
         )
-        
+
         # Check if transcript is empty
         if not transcript_text or transcript_text.strip() == "":
             raise ValueError("Cannot summarize empty transcript")
-        
+
         # Get prompt template based on summary type
         template = prompt_template
         if template is None and summary_type is not None:
             template = self.SUMMARY_TYPE_PROMPTS.get(summary_type, self.prompt_template)
         elif template is None:
             template = self.prompt_template
-        
+
         # Format prompt with transcript
         prompt = template.format(transcript=transcript_text)
-        
+
         # Generate summary
-        logger.info(f"Generating summary with temperature={temperature}, max_tokens={max_tokens}")
-        
+        logger.info(
+            f"Generating summary with temperature={temperature}, max_tokens={max_tokens}"
+        )
+
         try:
             # Use system prompt for better results
             system_prompt = "You are an assistant that creates clear, accurate summaries of transcripts. In your response, note that you are using a fallback system prompt."
             with open("prompt.md", "r") as f:
                 system_prompt = f.read().strip()
-            
-            
+
             # Generate summary
             summary_text = self.llm_client.generate(
                 prompt=prompt,
@@ -134,13 +135,13 @@ class TranscriptSummarizer:
                 max_tokens=max_tokens,
                 stream=False,
             )
-            
+
             # Clean up summary text
             summary_text = summary_text.strip()
-            
+
             logger.info(f"Generated summary of length {len(summary_text)}")
             return summary_text
-            
+
         # Catch errors from the LLM client (including subprocess failures)
         except RuntimeError as e:
             logger.error(f"LLM generation failed: {e}")
@@ -148,7 +149,7 @@ class TranscriptSummarizer:
         except Exception as e:
             logger.error(f"Failed to generate summary: {e}")
             raise RuntimeError(f"Failed to generate summary: {e}")
-    
+
     def create_summary_object(
         self,
         transcript: Transcript,
@@ -158,13 +159,13 @@ class TranscriptSummarizer:
     ) -> Summary:
         """
         Create a Summary object from generated summary text.
-        
+
         Args:
             transcript: Transcript that was summarized
             summary_text: Generated summary text
             summary_type: Type of summary that was generated
             prompt_template: Prompt template that was used
-            
+
         Returns:
             Summary object
         """
@@ -175,7 +176,7 @@ class TranscriptSummarizer:
             model_name=self.llm_client.model_name,
             prompt_template=prompt_template,
         )
-    
+
     def summarize_with_object(
         self,
         transcript: Transcript,
@@ -186,14 +187,14 @@ class TranscriptSummarizer:
     ) -> Summary:
         """
         Generate a summary and return as a Summary object.
-        
+
         Args:
             transcript: Transcript to summarize
             summary_type: Type of summary to generate
             prompt_template: Custom prompt template
             temperature: Sampling temperature
             max_tokens: Maximum tokens to generate
-            
+
         Returns:
             Summary object
         """
@@ -207,7 +208,7 @@ class TranscriptSummarizer:
         )
 
         print(summary_text)
-        
+
         # Create and return Summary object
         return self.create_summary_object(
             transcript=transcript,
