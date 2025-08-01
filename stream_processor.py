@@ -5,7 +5,6 @@ This module provides functionality for capturing audio from a microphone
 and processing it to generate transcriptions using the WhisperTranscriber class.
 """
 
-import audioop
 import logging
 import threading
 import time
@@ -215,7 +214,9 @@ class TranscriptionStreamProcessor:
 
                 # Check for voice activity if VAD is enabled
                 if self.vad_filter:
-                    rms = audioop.rms(data, 2)  # 2 bytes per sample for paInt16
+                    # Calculate RMS without audioop
+                    audio_data = np.frombuffer(data, dtype=np.int16)
+                    rms = np.sqrt(np.mean(audio_data.astype(np.float32) ** 2))
                     if rms < self.VAD_THRESHOLD:
                         # Skip silence
                         continue

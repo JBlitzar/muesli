@@ -56,13 +56,12 @@ muesli/
 
 ## Requirements
 
-| Requirement            | Purpose                          |
-| ---------------------- | -------------------------------- |
-| Python **3.8 +**       | Core application                 |
-| `whisper.cpp` binary   | On-device speech-to-text         |
-| `ffmpeg` (recommended) | Decode/convert non-WAV audio     |
-| Ollama (optional)      | Local LLM for summaries          |
-| **Poetry**             | Dependency management (optional) |
+| Requirement            | Purpose                      |
+| ---------------------- | ---------------------------- |
+| Python **3.8 +**       | Core application             |
+| `whisper.cpp` binary   | On-device speech-to-text     |
+| `ffmpeg` (recommended) | Decode/convert non-WAV audio |
+| Ollama (optional)      | Local LLM for summaries      |
 
 Python deps are listed in `requirements.txt`
 
@@ -76,6 +75,7 @@ Python deps are listed in `requirements.txt`
 ```bash
 git clone https://github.com/JBlitzar/muesli
 bash scripts/bootstrap_muesli_mac.sh
+uv sync
 ```
 
 ### 4. Run
